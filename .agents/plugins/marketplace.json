@@ -1,11 +1,16 @@
 {
+  "name": "gaia-marketplace",
+  "interface": {
+    "displayName": "Gaia"
+  },
   "plugins": [
     {
       "name": "gaia",
-      "source": "github.com/SiliconEinstein/Gaia",
-      "skills_path": ".codex/skills",
-      "description": "Gaia knowledge formalization skills — formalize papers, refine priors, and publish reasoning packages",
-      "version": "0.4.3"
+      "source": "./skills/",
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      }
     }
   ]
 }

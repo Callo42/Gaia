@@ -174,15 +174,15 @@ Gaia is agent-ready. A [Claude Code](https://claude.ai/code) plugin provides ski
 
 ### Codex CLI
 
-Gaia skills also work with [OpenAI Codex CLI](https://platform.openai.com/docs/codex-cli). The same `SKILL.md` files are recognized by both agents.
+Gaia skills also work with [OpenAI Codex CLI](https://developers.openai.com/codex/cli). The same `SKILL.md` files are recognized by both agents.
 
 ```bash
-# Install via the built-in skill installer
-$skill-installer install SiliconEinstein/Gaia
+# Add the Gaia marketplace
+codex marketplace add https://github.com/SiliconEinstein/Gaia
 
 # Or manually clone and copy skills
 git clone https://github.com/SiliconEinstein/Gaia.git
-cp -r Gaia/.codex/skills/* ~/.codex/skills/
+cp -r Gaia/skills/* ~/.codex/skills/
 ```
 
 After installation, invoke skills with the `$` prefix:
