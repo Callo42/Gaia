@@ -120,6 +120,24 @@ def test_state_remembers_last_review_id(tmp_path):
     assert state["last_review_id"] == report.review_id
 
 
+def test_review_id_collision_updates_report_and_state(tmp_path, monkeypatch):
+    pkg = tmp_path / "p"
+    _write_pkg(pkg)
+    monkeypatch.setattr("gaia.inquiry.review.mint_review_id", lambda _hash, _mode: "fixed-id")
+
+    first = run_review(pkg, no_infer=True)
+    second = run_review(pkg, no_infer=True)
+
+    assert first.review_id == "fixed-id"
+    assert second.review_id == "fixed-id-2"
+    second_path = reviews_dir(pkg) / "fixed-id-2.json"
+    assert second_path.exists()
+    assert json.loads(second_path.read_text(encoding="utf-8"))["review_id"] == "fixed-id-2"
+
+    state = json.loads((inquiry_dir(pkg) / "state.json").read_text(encoding="utf-8"))
+    assert state["last_review_id"] == "fixed-id-2"
+
+
 # --------------------------------------------------------------------------- #
 # Baseline resolution                                                         #
 # --------------------------------------------------------------------------- #
@@ -256,3 +274,17 @@ def test_cli_since_none_disables_baseline(tmp_path):
     data = json.loads(r.output)
     assert data["semantic_diff"]["baseline_review_id"] is None
     assert data["semantic_diff"]["added_claims"] == []
+
+
+def test_cli_rejects_conflicting_output_flags_without_state(tmp_path):
+    pkg = tmp_path / "p"
+    _write_pkg(pkg)
+
+    result = runner.invoke(
+        app,
+        ["inquiry", "review", str(pkg), "--no-infer", "--json", "--markdown"],
+    )
+
+    assert result.exit_code == 2
+    assert "--json and --markdown are mutually exclusive" in result.output
+    assert not (pkg / ".gaia" / "inquiry").exists()

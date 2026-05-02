@@ -96,6 +96,10 @@ class NextEdit:
         return d
 
 
+def _strategy_id(strategy) -> str:
+    return getattr(strategy, "strategy_id", None) or getattr(strategy, "id", None) or ""
+
+
 def from_validation(warnings: list[str], errors: list[str]) -> list[Diagnostic]:
     """Lift strings from ``ValidationResult`` into ``Diagnostic`` records."""
     out: list[Diagnostic] = []
@@ -341,7 +345,7 @@ def detect_warrant_status(
         return out
     rejected = rejected_strategy_targets or set()
     for s in getattr(graph, "strategies", []) or []:
-        sid = getattr(s, "id", "") or ""
+        sid = _strategy_id(s)
         label = sid.split("::")[-1] if sid else getattr(s, "label", "") or ""
         meta = dict(getattr(s, "metadata", None) or {})
         if sid in rejected or label in rejected:
@@ -402,7 +406,7 @@ def detect_blocked_warrant_path(
     if not hole_ids:
         return out
     for s in getattr(graph, "strategies", []) or []:
-        sid = getattr(s, "id", "") or ""
+        sid = _strategy_id(s)
         label = sid.split("::")[-1] if sid else ""
         premises = list(getattr(s, "premises", None) or [])
         blocking = sorted(p for p in premises if p in hole_ids)
@@ -545,7 +549,7 @@ def detect_overstrong_strategy_without_provenance(
         return True
 
     for s in getattr(graph, "strategies", []) or []:
-        sid = getattr(s, "id", "") or ""
+        sid = _strategy_id(s)
         label = sid.split("::")[-1] if sid else ""
         meta = dict(getattr(s, "metadata", None) or {})
         if _nonempty(meta.get("provenance")) or _nonempty(meta.get("justification")):

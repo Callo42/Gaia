@@ -234,3 +234,116 @@ def test_review_uses_check_core_breakdown(tmp_path):
     report = run_review(pkg, no_infer=True)
     actual = sorted(h["label"] for h in report.prior_holes)
     assert actual == expected
+
+
+def test_review_adapter_preserves_strategy_and_operator_ids(tmp_path):
+    pkg = tmp_path / "p"
+    pkg.mkdir()
+    (pkg / "pyproject.toml").write_text(
+        '[project]\nname = "id-review-gaia"\nversion = "0.1.0"\n\n'
+        '[tool.gaia]\nnamespace = "github"\ntype = "knowledge-package"\n',
+        encoding="utf-8",
+    )
+    src = pkg / "id_review"
+    src.mkdir()
+    (src / "__init__.py").write_text(
+        "from gaia.lang import claim, contradiction, support\n"
+        'a = claim("A", metadata={"prior": 0.7})\n'
+        'b = claim("B", metadata={"prior": 0.4})\n'
+        'c = claim("C")\n'
+        "sup = support(premises=[a], conclusion=c)\n"
+        "conflict = contradiction(a, b)\n"
+        '__all__ = ["a", "b", "c", "sup", "conflict"]\n',
+        encoding="utf-8",
+    )
+
+    from gaia.cli._packages import (
+        apply_package_priors,
+        compile_loaded_package_artifact,
+        ensure_package_env,
+        load_gaia_package,
+    )
+    from gaia.inquiry.review import _graph_to_ir_dict
+
+    ensure_package_env(pkg)
+    loaded = load_gaia_package(str(pkg))
+    apply_package_priors(loaded)
+    graph = compile_loaded_package_artifact(loaded).graph
+    ir = _graph_to_ir_dict(graph)
+
+    assert ir["strategies"][0]["id"].startswith("lcs_")
+    assert ir["operators"][0]["id"].startswith("lco_")
+
+    report = run_review(pkg, no_infer=True)
+    unreviewed = [d for d in report.diagnostics if d.kind == "unreviewed_warrant"]
+    assert unreviewed
+    assert all(d.target.startswith("lcs_") for d in unreviewed)
+
+
+def _write_dep_package(dep_dir: Path, *, name: str, monkeypatch) -> None:
+    dep_dir.mkdir()
+    (dep_dir / "pyproject.toml").write_text(
+        f'[project]\nname = "{name}-gaia"\nversion = "1.0.0"\n\n'
+        '[tool.gaia]\nnamespace = "github"\ntype = "knowledge-package"\n',
+        encoding="utf-8",
+    )
+    import_name = name.replace("-", "_")
+    src = dep_dir / import_name
+    src.mkdir()
+    (src / "__init__.py").write_text(
+        "from gaia.lang import claim, deduction\n"
+        'evidence = claim("Strong upstream evidence.", title="evidence")\n'
+        'upstream_conclusion = claim("Upstream conclusion.", title="conclusion")\n'
+        "deduction(premises=[evidence], conclusion=upstream_conclusion, "
+        "reason='evidence supports conclusion', prior=0.9)\n"
+        '__all__ = ["evidence", "upstream_conclusion"]\n',
+        encoding="utf-8",
+    )
+    (src / "priors.py").write_text(
+        'from . import evidence\n\nPRIORS = {evidence: (0.85, "Strong evidence")}\n',
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(dep_dir))
+
+
+def test_review_depth_uses_joint_dependency_graphs(tmp_path, monkeypatch):
+    from unittest.mock import patch
+
+    dep_dir = tmp_path / "upstream_dep"
+    _write_dep_package(dep_dir, name="upstream_dep", monkeypatch=monkeypatch)
+    compile_dep = runner.invoke(app, ["compile", str(dep_dir)])
+    assert compile_dep.exit_code == 0, compile_dep.output
+
+    pkg = tmp_path / "local_pkg"
+    pkg.mkdir()
+    (pkg / "pyproject.toml").write_text(
+        '[project]\nname = "local-pkg-gaia"\nversion = "1.0.0"\n'
+        'dependencies = ["upstream-dep-gaia"]\n\n'
+        '[tool.gaia]\nnamespace = "github"\ntype = "knowledge-package"\n',
+        encoding="utf-8",
+    )
+    src = pkg / "local_pkg"
+    src.mkdir()
+    (src / "__init__.py").write_text(
+        "from gaia.lang import claim, deduction\n"
+        "from upstream_dep import upstream_conclusion\n"
+        'local_obs = claim("Local observation.")\n'
+        "local_result = claim('Local result.')\n"
+        "deduction(premises=[upstream_conclusion, local_obs], conclusion=local_result, "
+        "reason='apply upstream', prior=0.9)\n"
+        '__all__ = ["local_obs", "local_result"]\n',
+        encoding="utf-8",
+    )
+
+    flat = run_review(pkg, depth=0)
+    with patch("gaia.cli._packages._locate_dependency_manifest_root", return_value=dep_dir):
+        joint = run_review(pkg, depth=1)
+
+    upstream_id = "github:upstream_dep::upstream_conclusion"
+    flat_beliefs = {b["knowledge_id"]: b["belief"] for b in flat.belief_report["beliefs"]}
+    joint_beliefs = {b["knowledge_id"]: b["belief"] for b in joint.belief_report["beliefs"]}
+
+    assert flat.compile_status == "ok"
+    assert joint.compile_status == "ok"
+    assert upstream_id in joint_beliefs
+    assert joint_beliefs[upstream_id] != flat_beliefs.get(upstream_id, 0.5)

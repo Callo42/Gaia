@@ -354,6 +354,10 @@ def review_command(
     if mode not in {"auto", "formalize", "explore", "verify", "publish"}:
         typer.echo(f"Error: invalid --mode {mode!r}.", err=True)
         raise typer.Exit(2)
+    if json_out and markdown_out:
+        typer.echo("Error: --json and --markdown are mutually exclusive.", err=True)
+        raise typer.Exit(2)
+
     report = run_review(
         path,
         focus_override=focus_,
@@ -369,9 +373,6 @@ def review_command(
         {"review_id": report.review_id, "mode": mode, "no_infer": no_infer},
     )
 
-    if json_out and markdown_out:
-        typer.echo("Error: --json and --markdown are mutually exclusive.", err=True)
-        raise typer.Exit(2)
     if json_out:
         typer.echo(json.dumps(report.to_json_dict(), ensure_ascii=False, indent=2))
     elif markdown_out:

@@ -18,8 +18,10 @@ from gaia.cli._packages import (
     collect_foreign_node_priors,
     compile_loaded_package_artifact,
     ensure_package_env,
+    load_dependency_compiled_graphs,
     load_gaia_package,
 )
+from gaia.cli.commands._review_manifest import load_or_generate_review_manifest
 from gaia.cli.commands.check_core import (
     KnowledgeBreakdown,
     analyze_knowledge_breakdown,
@@ -160,6 +162,8 @@ def run_review(
     warnings: list[str] = []
     errors: list[str] = []
     graph = None
+    loaded = None
+    compiled = None
     compile_status = "error"
     ir_hash: str | None = None
     counts = {"knowledge": 0, "strategies": 0, "operators": 0}
@@ -207,7 +211,16 @@ def run_review(
     semantic_diff = compute_semantic_diff(ir_dict, baseline_snap)
 
     # Step 5: inference via gaia.bp; enrich with baseline belief deltas.
-    belief_report = _build_belief_report(graph, pkg_path, no_infer, errors, focus)
+    belief_report = _build_belief_report(
+        graph,
+        pkg_path,
+        no_infer,
+        errors,
+        focus,
+        loaded=loaded,
+        compiled=compiled,
+        depth=depth,
+    )
     if belief_report["ran_inference"] and baseline_snap is not None:
         _annotate_belief_deltas(belief_report, baseline_snap)
 
@@ -268,7 +281,7 @@ def run_review(
     )
 
     # Persist snapshot for future diffs.
-    save_snapshot(
+    snapshot_path = save_snapshot(
         pkg_path,
         review_id=review_id,
         created_at=created_at,
@@ -276,6 +289,10 @@ def run_review(
         ir_dict=ir_dict,
         beliefs=belief_report.get("beliefs", []),
     )
+    actual_review_id = snapshot_path.stem
+    if actual_review_id != review_id:
+        review_id = actual_review_id
+        report.review_id = actual_review_id
 
     state.last_review_id = review_id
     if state.baseline_review_id is None:
@@ -353,7 +370,7 @@ def _graph_to_ir_dict(graph) -> dict | None:
     for s in getattr(graph, "strategies", []) or []:
         strategies.append(
             {
-                "id": getattr(s, "id", ""),
+                "id": _strategy_id(s),
                 "conclusion": getattr(s, "conclusion", None),
                 "premises": list(getattr(s, "premises", []) or []),
                 "background": list(getattr(s, "background", []) or []),
@@ -363,12 +380,20 @@ def _graph_to_ir_dict(graph) -> dict | None:
     for o in getattr(graph, "operators", []) or []:
         operators.append(
             {
-                "id": getattr(o, "id", ""),
+                "id": _operator_id(o),
                 "conclusion": getattr(o, "conclusion", None),
                 "variables": list(getattr(o, "variables", []) or []),
             }
         )
     return {"knowledges": knowledges, "strategies": strategies, "operators": operators}
+
+
+def _strategy_id(strategy) -> str:
+    return getattr(strategy, "strategy_id", None) or getattr(strategy, "id", None) or ""
+
+
+def _operator_id(operator) -> str:
+    return getattr(operator, "operator_id", None) or getattr(operator, "id", None) or ""
 
 
 def _normalize_type(t: Any) -> str:
@@ -434,6 +459,10 @@ def _build_belief_report(
     no_infer: bool,
     errors: list[str],
     focus: FocusBinding,
+    *,
+    loaded=None,
+    compiled=None,
+    depth: int = 0,
 ) -> dict[str, Any]:
     out: dict[str, Any] = {
         "ran_inference": False,
@@ -444,14 +473,38 @@ def _build_belief_report(
     }
     if graph is None or no_infer:
         return out
+    if loaded is None or compiled is None:
+        return out
     if errors:
         return out
     try:
-        from gaia.bp import lower_local_graph
+        from gaia.bp import FactorGraph, lower_local_graph, merge_factor_graphs
         from gaia.bp.engine import InferenceEngine
 
-        foreign = collect_foreign_node_priors(graph, pkg_path)
-        fg = lower_local_graph(graph, node_priors=foreign or None)
+        review_manifest = load_or_generate_review_manifest(loaded.pkg_path, compiled)
+        if depth != 0:
+            dep_compiled = load_dependency_compiled_graphs(loaded.project_config, depth=depth)
+            dep_factor_graphs: list[tuple[str, FactorGraph, str]] = []
+            for dep in dep_compiled:
+                dep_review_manifest = load_or_generate_review_manifest(dep.root, dep)
+                dep_fg = lower_local_graph(dep.graph, review_manifest=dep_review_manifest)
+                dep_prefix = f"{dep.graph.namespace}:{dep.graph.package_name}::"
+                dep_factor_graphs.append((dep.import_name, dep_fg, dep_prefix))
+
+            local_fg = lower_local_graph(graph, review_manifest=review_manifest)
+            local_prefix = f"{graph.namespace}:{graph.package_name}::"
+            fg = (
+                merge_factor_graphs(local_fg, dep_factor_graphs, local_prefix=local_prefix)
+                if dep_factor_graphs
+                else local_fg
+            )
+        else:
+            foreign = collect_foreign_node_priors(graph, pkg_path)
+            fg = lower_local_graph(
+                graph,
+                node_priors=foreign or None,
+                review_manifest=review_manifest,
+            )
         fg_errs = fg.validate()
         if fg_errs:
             errors.extend(fg_errs)
