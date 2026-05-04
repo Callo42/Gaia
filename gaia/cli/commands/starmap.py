@@ -68,11 +68,28 @@ def starmap_command(
     Two formats are supported:
 
     * ``html`` (default) — single-file interactive Sigma.js visualization.
-    * ``dot`` — a Graphviz ``digraph`` source suitable for rendering with
-      ``dot -Tpng`` / ``-Tsvg`` for research papers.
+      Double-click to open in a browser; no server required.
+    * ``dot`` — a Graphviz ``digraph`` source. Pipe through ``dot`` (Graphviz)
+      to get a paper-ready figure. ``graphviz`` must be installed separately
+      (``brew install graphviz`` / ``apt install graphviz``).
 
     Compile freshness, beliefs freshness, and graph validation gates apply to
     both formats.
+
+    Examples:
+
+      # Interactive HTML (default):
+      gaia starmap path/to/pkg
+
+      # DOT source + render to SVG (paper figure, vector, scales infinitely):
+      gaia starmap path/to/pkg --format dot --out figures/starmap.dot
+      dot -Tsvg figures/starmap.dot -o figures/starmap.svg
+
+      # PNG preview at higher DPI for slides / dense graphs:
+      dot -Tpng -Gdpi=200 figures/starmap.dot -o figures/starmap.png
+
+      # PDF for direct LaTeX \\includegraphics inclusion:
+      dot -Tpdf figures/starmap.dot -o figures/starmap.pdf
     """
     if fmt not in _DEFAULT_OUT:
         typer.echo(
