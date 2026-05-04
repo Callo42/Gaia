@@ -81,13 +81,13 @@ A composition's `conclusion` is whichever Claim the terminal action returned —
 
 **Edge cases:**
 
-- **Evidence compositions** (e.g., `gaussian_measurement`, Kepler `transit_bls_evidence`): terminal action is `infer(...)`, which returns the generated `likelihood`-kind helper Claim. `conclusion = likelihood_helper_qid`.
+- **Evidence compositions** (e.g., `gaussian_measurement`, Kepler `transit_bls_evidence`): terminal action is `infer(...)`, which returns the evidence Claim. `conclusion = evidence_qid`; the generated `likelihood`-kind helper remains attached to the `Infer` action as its review warrant.
 - **Compute-chain compositions** (e.g., deriving a density from temperature and pressure): terminal action is `compute(...)`, returning a derived Claim. `conclusion = derived_claim_qid`.
 - **Relate / propositional compositions** (e.g., ending in `equal()` or `and_()`): terminal action returns the relation helper Claim. `conclusion = helper_qid`.
 
 `conclusion` is **required** — every composition must commit to a single public output Claim. See §10 for the multi-output open point.
 
-**Resolved prerequisite (v0.5 DSL update):** current v0.5 `gaia/lang/dsl/infer_verb.py` generates a helper Claim with `metadata["helper_kind"] = "likelihood"`, attaches it to the `Infer` Action's `helper` field, and returns that helper Claim. This is what makes `conclusion = likelihood_helper_qid` possible for evidence-shaped compositions.
+**Resolved prerequisite (v0.5 DSL update):** current v0.5 `gaia/lang/dsl/infer_verb.py` generates a helper Claim with `metadata["helper_kind"] = "likelihood"` and attaches it to the `Infer` Action's `helper` field, but returns the evidence Claim. Evidence-shaped compositions therefore publish the evidence Claim as their conclusion while review still targets the internal likelihood helper/warrant.
 
 ### 1.5 Reverse pointer on sub-Knowledge
 

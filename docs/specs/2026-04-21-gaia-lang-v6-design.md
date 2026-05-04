@@ -517,14 +517,15 @@ infer(
     evidence: Claim | str,
     *,
     hypothesis: Claim,
+    given: Claim | tuple[Claim, ...] = (),
     background: list[Note | Claim] = [],
     p_e_given_h: float,
-    p_e_given_not_h: float,
+    p_e_given_not_h: float = 0.5,
     rationale: str = "",
 ) -> Claim
 ```
 
-No `given` parameter — assumptions and conditions go in `background` (not in BP). If assumptions are questionable, reviewer rejects the Strategy via ReviewManifest.
+`background` is fixed heuristic context for interpreting the probabilities. `given` is a claim-level switch condition that enters BP; when it is false, the infer relation is neutral.
 
 ```python
 evidence = infer(
@@ -539,8 +540,10 @@ evidence = infer(
 
 Returns the evidence Claim `E`. Internally, the action still creates a
 reviewable `StatisticalSupport` helper Claim so ReviewManifest can audit the
-probabilistic warrant. Compiles to `Strategy(type="infer", premises=[H],
-conclusion=E)` + CPT `[p_e_given_not_h, p_e_given_h]`.
+probabilistic warrant. Without `given`, it compiles to `Strategy(type="infer",
+premises=[H], conclusion=E)` + CPT `[p_e_given_not_h, p_e_given_h]`. With
+`given=G`, it compiles to `premises=[H, G]` + CPT
+`[0.5, 0.5, p_e_given_not_h, p_e_given_h]`.
 
 ### 7.2 Semantics
 

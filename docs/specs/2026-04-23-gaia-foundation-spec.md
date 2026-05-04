@@ -818,6 +818,7 @@ class Correlate(Action):
 class Infer(Correlate):
     hypothesis: Claim | None = None
     evidence: Claim | None = None
+    given: tuple[Claim, ...] = ()
     p_e_given_h: float = 0.5
     p_e_given_not_h: float = 0.5
     helper: Claim | None = None
@@ -842,12 +843,14 @@ from gaia.lang import Claim, infer
 
 evidence_positive = Claim("Diagnostic test T returned positive.")
 disease = Claim("Patient has disease D.")
+calibration_reliable = Claim("Diagnostic test T calibration is reliable.")
 
-support_claim = infer(
+evidence_positive = infer(
     evidence=evidence_positive,
     hypothesis=disease,
+    given=calibration_reliable, # OPTIONAL. Switch condition; enters BP as a gate.
     p_e_given_h=0.95,           # REQUIRED. Cromwell-clamped.
-    p_e_given_not_h=0.10,       # REQUIRED. Cromwell-clamped.
+    p_e_given_not_h=0.10,       # OPTIONAL. Defaults to neutral 0.5.
     prior_hypothesis=0.10,      # OPTIONAL. Population prevalence of disease in this context.
     prior_evidence=None,        # OPTIONAL. Rarely needed — usually closes from the factor.
     background=[assumption_a, assumption_b],   # §13
@@ -859,11 +862,11 @@ support_claim = infer(
         "Prior 10% from NHANES adult prevalence."
     ),
 )
-# support_claim is a helper Claim with metadata["helper_kind"] = "likelihood".
-# Its content: "evidence_positive statistically supports disease with P(E|H)=0.95, P(E|¬H)=0.10."
+# infer(...) returns the evidence Claim. The action also creates an internal
+# helper Claim with metadata["helper_kind"] = "likelihood" for review.
 ```
 
-**Required arguments:** `p_e_given_h`, `p_e_given_not_h`. Cromwell clamp `(ε, 1-ε)` applies at compile time.
+**Required arguments:** `p_e_given_h`. `p_e_given_not_h` defaults to `0.5`, the soft-implication neutral baseline. Cromwell clamp `(ε, 1-ε)` applies at compile time.
 
 **Optional prior arguments** (`prior_hypothesis`, `prior_evidence`). Authors writing an `infer` are often in the same epistemic context where the hypothesis's prior is being estimated — the paper, the cohort, the domain-expert judgment that justifies the CPT pair usually justifies the marginal too. Co-locating these numbers at the `infer` call site keeps related judgments together in the IR and in the reviewer's view.
 
@@ -1328,7 +1331,7 @@ IR schema changes belong in change-controlled PRs against `docs/foundations/gaia
 
     Composition is a **v0.5 deliverable**, not a parked v1.x extension. Specific schemas, decorator runtime behaviour, validator rules, canonical template signatures, migration steps, and worked examples all live in the composition design doc; foundation tracks the overall work item here.
 
-11b. **`[done]`** Fix the `infer()` DSL return value. Current v0.5 `gaia/lang/dsl/infer_verb.py` generates a helper Claim tagged `helper_kind="likelihood"`, attaches it to the `Infer` action's `helper` field, and returns that helper Claim. The legacy v5-style `infer()` in `gaia/lang/dsl/strategies.py` stays as it is through the compatibility path. The Relate-verb pattern — not the Support-verb pattern — is the right analogy for `infer`'s semantics: both inputs (E and H) are pre-existing, so the action's semantic output is the generated relation helper, not one of the inputs.
+11b. **`[done]`** Fix the `infer()` DSL return value. Current v0.5 `gaia/lang/dsl/infer_verb.py` generates a helper Claim tagged `helper_kind="likelihood"` and attaches it to the `Infer` action's `helper` field, but the public DSL returns the evidence Claim `E`. The legacy v5-style `infer()` in `gaia/lang/dsl/strategies.py` stays as it is through the compatibility path. The helper is the review target for the probability warrant, not the author-facing scientific output.
 
 11c. **`[new]`** Introduce the Correlate action family per §11. Add abstract base class `Correlate(Action)` in `gaia/lang/runtime/action.py`. Migrate `Infer` to subclass `Correlate` (from current direct `Action` subclass). This creates a shared home for shared concerns across probabilistic 2-Claim actions — parameter validation, `gaia check` hooks, audit metadata conventions — without altering existing Infer semantics.
 
