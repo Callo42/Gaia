@@ -189,7 +189,7 @@ gaia init → gaia add → /gaia:formalization → gaia compile → gaia infer �
 | `gaia render --target github [path]` | Generate GitHub presentation skeleton (`.github-output/`): wiki, README, React Pages, graph.json |
 | `gaia render --target docs [path]` | Generate per-module detailed reasoning to `docs/detailed-reasoning.md` |
 | `gaia render [path]` | Default: render both docs and github targets (`--target all`) |
-| `gaia starmap [path]` | Emit a single-file interactive HTML starmap (WebGL, ~10k nodes); double-click to open, no server required. Default output: `.gaia/starmap.html` |
+| `gaia starmap [path]` | Emit a single-file interactive HTML starmap (WebGL, ~10k nodes); double-click to open, no server required. Default output: `.gaia/starmap.html`. Use `--format dot` for a paper-ready Graphviz source (default output: `.gaia/starmap.dot`) |
 | `gaia register [path]` | Submit package to the [Gaia Official Registry](https://github.com/SiliconEinstein/gaia-registry) |
 
 ## Quick Start

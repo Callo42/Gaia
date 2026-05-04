@@ -1,4 +1,4 @@
-"""gaia starmap — emit an interactive single-file HTML starmap of a compiled package."""
+"""gaia starmap — emit a starmap of a compiled package (HTML or DOT)."""
 
 from __future__ import annotations
 
@@ -13,11 +13,19 @@ from gaia.cli._packages import (
     compile_loaded_package_artifact,
     load_gaia_package,
 )
+from gaia.cli.commands._dot import to_dot
 from gaia.cli.commands._graph_json import generate_graph_json
 from gaia.cli.commands._render_priors import param_data_from_ir_metadata
 from gaia.ir.validator import validate_local_graph
 
 GRAPH_DATA_PLACEHOLDER = "<!--__GRAPH_DATA__-->"
+
+# Default output paths per format. Resolved after the format is parsed so we
+# can keep `--out` default as `None` in the signature.
+_DEFAULT_OUT = {
+    "html": ".gaia/starmap.html",
+    "dot": ".gaia/starmap.dot",
+}
 
 
 def _load_template() -> str:
@@ -41,22 +49,38 @@ def _render_html(template: str, graph_json: str) -> str:
 def starmap_command(
     path: str = typer.Argument(".", help="Path to knowledge package directory"),
     out: str = typer.Option(
-        ".gaia/starmap.html",
+        None,
         "--out",
         help=(
-            "Output HTML file. Defaults to '.gaia/starmap.html' relative to the "
-            "package directory; absolute paths are honored as-is."
+            "Output file. Defaults to '.gaia/starmap.html' (html) or "
+            "'.gaia/starmap.dot' (dot), relative to the package directory; "
+            "absolute paths are honored as-is."
         ),
     ),
+    fmt: str = typer.Option(
+        "html",
+        "--format",
+        help="Output format: 'html' (interactive Sigma.js) or 'dot' (paper-ready Graphviz).",
+    ),
 ) -> None:
-    """Emit a single-file interactive HTML starmap of the compiled package.
+    """Emit a starmap of the compiled package.
 
-    The command compiles the package (same gate as `gaia render`), loads
-    inferred beliefs and priors when available (degrades gracefully when
-    they are not), serializes the graph to JSON via the shared
-    `_graph_json` helper, and injects it into a single-file HTML
-    template. The result opens in any browser without a server.
+    Two formats are supported:
+
+    * ``html`` (default) — single-file interactive Sigma.js visualization.
+    * ``dot`` — a Graphviz ``digraph`` source suitable for rendering with
+      ``dot -Tpng`` / ``-Tsvg`` for research papers.
+
+    Compile freshness, beliefs freshness, and graph validation gates apply to
+    both formats.
     """
+    if fmt not in _DEFAULT_OUT:
+        typer.echo(
+            f"Error: --format must be one of {sorted(_DEFAULT_OUT)}; got {fmt!r}.",
+            err=True,
+        )
+        raise typer.Exit(2)
+
     try:
         loaded = load_gaia_package(path)
         apply_package_priors(loaded)
@@ -120,21 +144,24 @@ def starmap_command(
         param_data=param_data,
         exported_ids=exported_ids,
     )
+    graph_payload = json.loads(graph_json)
 
-    try:
-        template = _load_template()
-        html = _render_html(template, graph_json)
-    except GaiaCliError as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(1)
+    if fmt == "html":
+        try:
+            template = _load_template()
+            content = _render_html(template, graph_json)
+        except GaiaCliError as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(1)
+    else:  # dot
+        content = to_dot(graph_json)
 
-    out_path = Path(out)
+    out_path = Path(out) if out is not None else Path(_DEFAULT_OUT[fmt])
     if not out_path.is_absolute():
         out_path = loaded.pkg_path / out_path
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(html, encoding="utf-8")
+    out_path.write_text(content, encoding="utf-8")
 
-    payload = json.loads(graph_json)
-    node_count = len(payload.get("nodes", []))
-    edge_count = len(payload.get("edges", []))
+    node_count = len(graph_payload.get("nodes", []))
+    edge_count = len(graph_payload.get("edges", []))
     typer.echo(f"Wrote starmap to {out_path} ({node_count} nodes, {edge_count} edges)")
