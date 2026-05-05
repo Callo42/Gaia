@@ -301,6 +301,11 @@ def _formula_binding_symbols(node: dict) -> set[str]:
 
 
 def _hypothesis_prior(node: dict | None) -> float:
+    # Fallback to 0.5 when a hypothesis has no IR-level prior. This treats
+    # un-priored hypotheses as maximally uninformative for the prior-coherence
+    # sum, matching how authors typically read "no prior set yet". gaia check
+    # applies priors.py before compilation, so sidecar priors are visible here
+    # once they have been injected into the IR metadata.
     if node is None:
         return 0.5
     prior = _get_prior(node)
