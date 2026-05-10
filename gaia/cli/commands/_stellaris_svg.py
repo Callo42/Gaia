@@ -195,8 +195,18 @@ def _build_legend_svg() -> str:
     # (kind, fill, line, label) — kind drives the icon shape; label includes
     # leading symbol for hex-* and root rows.
     rows: list[tuple[str, str, str, str]] = [
-        ("box-premise", _LEGEND_PREMISE_FILL, _LEGEND_PREMISE_LINE, "premise · 无上游 strategy/operator"),
-        ("box-derived", _LEGEND_DERIVED_FILL, _LEGEND_DERIVED_LINE, "derived · ≥1 上游 strategy/operator"),
+        (
+            "box-premise",
+            _LEGEND_PREMISE_FILL,
+            _LEGEND_PREMISE_LINE,
+            "premise · 无上游 strategy/operator",
+        ),
+        (
+            "box-derived",
+            _LEGEND_DERIVED_FILL,
+            _LEGEND_DERIVED_LINE,
+            "derived · ≥1 上游 strategy/operator",
+        ),
         ("box-root", _LEGEND_ROOT_FILL, _LEGEND_ROOT_LINE, "★ root claim · 本轮 BP 起点"),
         ("ellipse", _LEGEND_STRAT_FILL, _LEGEND_STRAT_LINE, "deduction (推演)"),
         ("diamond", _LEGEND_SUPPORT_FILL, _LEGEND_SUPPORT_LINE, "support (独立证据支撑)"),

@@ -27,10 +27,7 @@ from gaia.cli.main import app
 runner = CliRunner()
 
 FIXTURE_DIR = (
-    Path(__file__).resolve().parents[1]
-    / "fixtures"
-    / "starmap_replay"
-    / "mendelian_inheritance"
+    Path(__file__).resolve().parents[1] / "fixtures" / "starmap_replay" / "mendelian_inheritance"
 )
 
 
@@ -384,9 +381,7 @@ def test_rekey_layout_overlaps_with_event_ids_after_fix():
     ]
     new_layout, _ = rekey_layout_to_lkm_ids(layout, ir)
     event_ids = {
-        n["id"]
-        for ev in events
-        for n in (ev.get("graph_delta") or {}).get("nodes_added", [])
+        n["id"] for ev in events for n in (ev.get("graph_delta") or {}).get("nodes_added", [])
     }
     layout_keys = set(new_layout["nodes"].keys())
     overlap = event_ids & layout_keys
@@ -651,7 +646,11 @@ def test_bridge_positional_fallback_pairs_sparse_events_in_declaration_order():
     events = [
         {
             "gaia_actions": [
-                {"action": "contradiction", "symbol": "first_stale", "file": "src/pkg/cross_paper.py"},
+                {
+                    "action": "contradiction",
+                    "symbol": "first_stale",
+                    "file": "src/pkg/cross_paper.py",
+                },
             ],
             "payload": {"operator": "first_stale"},
             "graph_delta": {
@@ -663,7 +662,11 @@ def test_bridge_positional_fallback_pairs_sparse_events_in_declaration_order():
         },
         {
             "gaia_actions": [
-                {"action": "contradiction", "symbol": "second_stale", "file": "src/pkg/cross_paper.py"},
+                {
+                    "action": "contradiction",
+                    "symbol": "second_stale",
+                    "file": "src/pkg/cross_paper.py",
+                },
             ],
             "payload": {"operator": "second_stale"},
             "graph_delta": {
@@ -683,9 +686,7 @@ def test_bridge_positional_fallback_pairs_sparse_events_in_declaration_order():
     # Positional fallback emits an auditable warning for each fired
     # match.
     positional_warns = [w for w in warns if "positional fallback" in w]
-    assert len(positional_warns) == 2, (
-        f"expected 2 positional-fallback warnings, got: {warns}"
-    )
+    assert len(positional_warns) == 2, f"expected 2 positional-fallback warnings, got: {warns}"
 
 
 def test_bridge_skips_fallback_when_action_file_lacks_py_extension():
@@ -747,7 +748,11 @@ def test_bridge_skips_fallback_when_action_file_lacks_py_extension():
 
 def test_rekey_layout_idempotent_without_ir():
     """Empty / missing IR is a no-op and returns no warnings."""
-    layout = {"viewport": {"width": 0, "height": 0}, "nodes": {"x": {"x": 0, "y": 0}}, "clusters": []}
+    layout = {
+        "viewport": {"width": 0, "height": 0},
+        "nodes": {"x": {"x": 0, "y": 0}},
+        "clusters": [],
+    }
     new_layout, warns = rekey_layout_to_lkm_ids(layout, {})
     assert new_layout is layout
     assert warns == []
@@ -835,7 +840,11 @@ def test_annotate_layout_with_kinds_marks_strategies_and_operators():
 
 def test_annotate_layout_idempotent_without_ir():
     """Empty IR is a no-op."""
-    layout = {"viewport": {"width": 0, "height": 0}, "nodes": {"x": {"x": 0, "y": 0}}, "clusters": []}
+    layout = {
+        "viewport": {"width": 0, "height": 0},
+        "nodes": {"x": {"x": 0, "y": 0}},
+        "clusters": [],
+    }
     out = annotate_layout_with_kinds(layout, {})
     assert out is layout
     # No kind stamped when IR is empty.
@@ -1283,7 +1292,11 @@ def _simulate_store_admission(payload: dict) -> dict:
             concl = entry.get("conclusion_id")
             if concl and concl in admitted_ids:
                 admitted_edges.add((nid, concl, edge_kind))
-            incoming = entry.get("variable_ids") if entry.get("kind") == "operator" else entry.get("premise_ids")
+            incoming = (
+                entry.get("variable_ids")
+                if entry.get("kind") == "operator"
+                else entry.get("premise_ids")
+            )
             for upstream in incoming or []:
                 if upstream in admitted_ids:
                     admitted_edges.add((upstream, nid, edge_kind))
@@ -1482,8 +1495,11 @@ def test_build_timeline_payload_drops_retry_and_failure_events():
         _ev("a", 2, "2026-05-05T00:00:01.000Z", channel="support", response_code=500),
         # Retry: retry_of_event_id set — must be dropped.
         _ev(
-            "a", 3, "2026-05-05T00:00:02.000Z",
-            channel="support", response_code=0,
+            "a",
+            3,
+            "2026-05-05T00:00:02.000Z",
+            channel="support",
+            response_code=0,
             retry_of_event_id="2026-05-05T00:00:01.000Z__a__support__2",
         ),
     ]

@@ -195,8 +195,7 @@ def rekey_layout_to_lkm_ids(layout: dict, ir: dict) -> tuple[dict, list[str]]:
         # caught above as a warning), keep the first and record the second.
         if new_key in rekeyed:
             warnings.append(
-                f"layout re-key collision at {new_key!r}: dropping later "
-                f"entry from {key!r}"
+                f"layout re-key collision at {new_key!r}: dropping later entry from {key!r}"
             )
             continue
         rekeyed[new_key] = value
@@ -311,9 +310,7 @@ def annotate_layout_with_kinds(layout: dict, ir: dict) -> dict:
                 if concl_layout_key:
                     value["conclusion_id"] = concl_layout_key
                 premise_keys = [
-                    id_to_layout_key[p]
-                    for p in (s.get("premises") or [])
-                    if p in id_to_layout_key
+                    id_to_layout_key[p] for p in (s.get("premises") or []) if p in id_to_layout_key
                 ]
                 if premise_keys:
                     value["premise_ids"] = premise_keys
@@ -343,9 +340,7 @@ def annotate_layout_with_kinds(layout: dict, ir: dict) -> dict:
                 if concl_layout_key:
                     value["conclusion_id"] = concl_layout_key
                 variable_keys = [
-                    id_to_layout_key[v]
-                    for v in (o.get("variables") or [])
-                    if v in id_to_layout_key
+                    id_to_layout_key[v] for v in (o.get("variables") or []) if v in id_to_layout_key
                 ]
                 if variable_keys:
                     value["variable_ids"] = variable_keys
@@ -1196,11 +1191,11 @@ def topo_reorder_ticks(
         if key not in layout_nodes:
             continue
         deps: set[str] = set()
-        for p in (s.get("premises") or []):
+        for p in s.get("premises") or []:
             lk = id_to_layout_key.get(p)
             if lk:
                 deps.add(lk)
-        for b in (s.get("background") or []):
+        for b in s.get("background") or []:
             lk = id_to_layout_key.get(b)
             if lk:
                 deps.add(lk)
@@ -1217,7 +1212,7 @@ def topo_reorder_ticks(
         if key not in layout_nodes:
             continue
         deps = set()
-        for v in (o.get("variables") or []):
+        for v in o.get("variables") or []:
             lk = id_to_layout_key.get(v)
             if lk:
                 deps.add(lk)
@@ -1234,7 +1229,7 @@ def topo_reorder_ticks(
     orphans_by_pos: dict[int, dict] = {}
 
     provides: dict[int, str | None] = {}  # tick original_idx → layout key (or None)
-    deps: dict[int, set[str]] = {}        # tick original_idx → set of layout keys
+    deps: dict[int, set[str]] = {}  # tick original_idx → set of layout keys
 
     def _prior_dep_keys(ev: dict) -> set[str]:
         """Best-effort: derive the prior's target claim layout key(s)."""
@@ -1293,11 +1288,7 @@ def topo_reorder_ticks(
                 d = set(oper_deps[canon])
         elif kind == "prior":
             ev_idx = tick.get("event_index")
-            ev = (
-                events[ev_idx]
-                if isinstance(ev_idx, int) and 0 <= ev_idx < len(events)
-                else None
-            )
+            ev = events[ev_idx] if isinstance(ev_idx, int) and 0 <= ev_idx < len(events) else None
             if ev is not None:
                 d = _prior_dep_keys(ev)
             prov = None
@@ -1435,9 +1426,7 @@ def compute_dot_layout(dot_source: str, *, dot_binary: str = "dot") -> dict:
         check=False,
     )
     if proc.returncode != 0:
-        raise RuntimeError(
-            f"`dot -Tjson0` failed (exit {proc.returncode}): {proc.stderr.strip()}"
-        )
+        raise RuntimeError(f"`dot -Tjson0` failed (exit {proc.returncode}): {proc.stderr.strip()}")
     layout = json.loads(proc.stdout)
 
     objects = layout.get("objects") or []
@@ -1564,9 +1553,7 @@ def _truncated_canonical_graph(
         concl = s.get("conclusion")
         premises = list(s.get("premises", []) or [])
         background = list(s.get("background", []) or [])
-        if concl in kept_ids and all(
-            p in kept_ids for p in premises + background
-        ):
+        if concl in kept_ids and all(p in kept_ids for p in premises + background):
             strategies_in.append(s)
 
     payload = {

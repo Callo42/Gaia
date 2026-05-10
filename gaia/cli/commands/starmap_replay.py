@@ -100,9 +100,7 @@ def _read_jsonl(path: Path) -> list[dict]:
         try:
             events.append(json.loads(line))
         except json.JSONDecodeError as exc:
-            raise typer.BadParameter(
-                f"{path}: line {lineno} is not valid JSON: {exc}"
-            ) from exc
+            raise typer.BadParameter(f"{path}: line {lineno} is not valid JSON: {exc}") from exc
     return events
 
 
@@ -207,9 +205,7 @@ def _try_load_ir_artifacts(pkg_dir: Path) -> tuple[dict | None, dict | None, lis
     if ir is not None:
         try:
             param_data = param_data_from_ir_metadata(ir)
-            exported_ids = {
-                k["id"] for k in ir.get("knowledges", []) if k.get("exported")
-            }
+            exported_ids = {k["id"] for k in ir.get("knowledges", []) if k.get("exported")}
             graph_json = generate_graph_json(
                 ir,
                 beliefs_data=None,
@@ -299,9 +295,7 @@ def build_timeline_payload(
     # hexagon's edges fan into not-yet-drawn nodes. The reorder uses
     # original tick_index as a tiebreaker so chronology is preserved
     # whenever no dependency forces a swap.
-    ticks, topo_warnings = topo_reorder_ticks(
-        ticks, merged, layout_for_survival, ir_for_survival
-    )
+    ticks, topo_warnings = topo_reorder_ticks(ticks, merged, layout_for_survival, ir_for_survival)
     build_warnings.extend(topo_warnings)
 
     return {

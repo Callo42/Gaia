@@ -948,7 +948,14 @@ def test_inject_legend_includes_all_node_role_rows():
     # All 6 operator types by symbol + name
     for sym in ("⊗", "⊙", "⊃", "¬", "∨", "∧"):
         assert sym in out
-    for tname in ("contradiction", "equivalence", "implication", "complement", "disjunction", "conjunction"):
+    for tname in (
+        "contradiction",
+        "equivalence",
+        "implication",
+        "complement",
+        "disjunction",
+        "conjunction",
+    ):
         assert tname in out
 
 
