@@ -79,3 +79,61 @@ def test_compile_multi_file_module_order(tmp_path):
     assert by_label["z"]["exported"] is True
     assert by_label["x"]["exported"] is False
     assert ir["module_order"] == ["sec_a", "sec_b"]
+
+
+def test_compile_discovers_source_modules_without_root_imports(tmp_path):
+    """Source modules are declarations, not a byproduct of __init__ re-exports."""
+    pkg_dir = tmp_path / "discovery_pkg"
+    pkg_dir.mkdir()
+    (pkg_dir / "pyproject.toml").write_text(
+        '[project]\nname = "discovery-pkg-gaia"\nversion = "1.0.0"\n\n'
+        '[tool.gaia]\nnamespace = "github"\ntype = "knowledge-package"\n'
+    )
+    pkg_src = pkg_dir / "discovery_pkg"
+    pkg_src.mkdir()
+    (pkg_src / "claims.py").write_text(
+        "from gaia.lang import claim, support\n\n"
+        'evidence = claim("Evidence from an unimported module.")\n'
+        'result = claim("Result from an unimported module.")\n'
+        "_strat_result = support(\n"
+        '    [evidence], result, reason="Evidence supports result.", prior=0.9\n'
+        ")\n"
+    )
+    (pkg_src / "__init__.py").write_text('__all__ = ["result"]\n')
+
+    result = runner.invoke(app, ["compile", str(pkg_dir)])
+    assert result.exit_code == 0, f"Failed: {result.output}"
+
+    ir = json.loads((pkg_dir / ".gaia" / "ir.json").read_text())
+    by_label = {k["label"]: k for k in ir["knowledges"] if "label" in k}
+
+    assert by_label["evidence"]["module"] == "claims"
+    assert by_label["result"]["module"] == "claims"
+    assert by_label["result"]["exported"] is True
+    assert ir["module_order"] == ["claims"]
+
+
+def test_load_labels_private_strategy_names_from_declaring_module(tmp_path):
+    """Underscore-prefixed strategy variables still get stable internal labels."""
+    from gaia.cli._packages import load_gaia_package
+
+    pkg_dir = tmp_path / "private_strategy_pkg"
+    pkg_dir.mkdir()
+    (pkg_dir / "pyproject.toml").write_text(
+        '[project]\nname = "private-strategy-pkg-gaia"\nversion = "1.0.0"\n\n'
+        '[tool.gaia]\nnamespace = "github"\ntype = "knowledge-package"\n'
+    )
+    pkg_src = pkg_dir / "private_strategy_pkg"
+    pkg_src.mkdir()
+    (pkg_src / "logic.py").write_text(
+        "from gaia.lang import claim, support\n\n"
+        'premise = claim("Premise.")\n'
+        'result = claim("Result.")\n'
+        '_strat_result = support([premise], result, reason="Premise entails result.", prior=0.9)\n'
+    )
+    (pkg_src / "__init__.py").write_text('from .logic import result\n__all__ = ["result"]\n')
+
+    loaded = load_gaia_package(pkg_dir)
+
+    assert len(loaded.package.strategies) == 1
+    assert loaded.package.strategies[0].label == "_strat_result"

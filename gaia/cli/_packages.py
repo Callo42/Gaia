@@ -85,15 +85,35 @@ def _import_fresh(import_name: str) -> ModuleType:
         sys.dont_write_bytecode = previous
 
 
-def _assign_labels(module: ModuleType, pkg: CollectedPackage) -> None:
+def _source_module_for_loaded_module(module_name: str, pkg: CollectedPackage) -> str | None:
+    if module_name == pkg.name or module_name.endswith(".__init__"):
+        return None
+    return module_name.removeprefix(f"{pkg.name}.")
+
+
+def _is_assignable_name(name: str) -> bool:
+    return not (name.startswith("__") and name.endswith("__"))
+
+
+def _assign_labels(module: ModuleType, pkg: CollectedPackage, source_module: str | None) -> None:
     local_knowledge_ids = {id(k) for k in pkg.knowledge}
     local_strategy_ids = {id(s) for s in pkg.strategies}
-    all_names = [name for name in dir(module) if not name.startswith("_")]
-    for attr in all_names:
-        obj = getattr(module, attr, None)
-        if isinstance(obj, Knowledge) and id(obj) in local_knowledge_ids and obj.label is None:
+    for attr, obj in vars(module).items():
+        if not _is_assignable_name(attr):
+            continue
+        if (
+            isinstance(obj, Knowledge)
+            and id(obj) in local_knowledge_ids
+            and obj.label is None
+            and getattr(obj, "_source_module", None) == source_module
+        ):
             obj.label = attr
-        if isinstance(obj, Strategy) and id(obj) in local_strategy_ids and obj.label is None:
+        if (
+            isinstance(obj, Strategy)
+            and id(obj) in local_strategy_ids
+            and obj.label is None
+            and getattr(obj, "_source_module", None) == source_module
+        ):
             obj.label = attr
 
 
@@ -107,7 +127,45 @@ def _assign_labels_for_loaded_modules() -> None:
         pkg = get_inferred_package(pyproject)
         if pkg is None:
             continue
-        _assign_labels(module, pkg)
+        source_module = _source_module_for_loaded_module(module_name, pkg)
+        _assign_labels(module, pkg, source_module)
+
+
+def _is_auxiliary_source_module(parts: tuple[str, ...]) -> bool:
+    if "reviews" in parts:
+        return True
+    return len(parts) == 1 and parts[0] in {"priors", "review"}
+
+
+def _source_module_name(import_name: str, package_dir: Path, path: Path) -> str | None:
+    relative = path.relative_to(package_dir)
+    if relative.name == "__init__.py":
+        if relative.parent == Path("."):
+            return None
+        parts = relative.parent.parts
+    else:
+        parts = relative.with_suffix("").parts
+    if _is_auxiliary_source_module(parts):
+        return None
+    return f"{import_name}.{'.'.join(parts)}"
+
+
+def _import_package_source_modules(import_name: str, package_dir: Path) -> None:
+    module_names = [
+        module_name
+        for path in sorted(package_dir.rglob("*.py"))
+        if (module_name := _source_module_name(import_name, package_dir, path)) is not None
+    ]
+    previous = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True
+    try:
+        for module_name in module_names:
+            try:
+                importlib.import_module(module_name)
+            except Exception as exc:
+                raise GaiaCliError(f"Error importing package module {module_name}: {exc}") from exc
+    finally:
+        sys.dont_write_bytecode = previous
 
 
 def _load_pyproject_config(pkg_path: Path) -> dict[str, Any]:
@@ -218,6 +276,8 @@ def load_gaia_package(path: str | Path = ".") -> LoadedGaiaPackage:
         sys.path.insert(0, source_root_str)
 
     module = _import_package_module(import_name)
+    _import_package_source_modules(import_name, source_root / import_name)
+
     pkg = get_inferred_package(pyproject)
     if pkg is None:
         raise GaiaCliError(
