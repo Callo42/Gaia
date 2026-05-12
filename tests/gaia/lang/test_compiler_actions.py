@@ -2,7 +2,9 @@ import pytest
 
 from gaia.lang import (
     Claim,
+    Variable,
     associate,
+    bayes,
     candidate_relation,
     compose,
     compute,
@@ -13,8 +15,12 @@ from gaia.lang import (
     exclusive,
     infer,
     observe,
+    parameter,
     predict,
     tension,
+)
+from gaia.lang import (
+    Probability as ProbabilityDomain,
 )
 from gaia.lang.compiler import compile_package_artifact
 from gaia.lang.runtime.package import CollectedPackage
@@ -531,4 +537,21 @@ def test_duplicate_compose_action_label_raises():
         c2.label = "c2"
 
     with pytest.raises(ValueError, match="duplicate action label 'same_workflow'"):
+        compile_package_artifact(pkg)
+
+
+def test_duplicate_bayes_and_core_action_label_raises():
+    with CollectedPackage("v6_actions") as pkg:
+        theta = Variable(symbol="theta", domain=ProbabilityDomain)
+        hypothesis = parameter(theta, 0.5, content="theta = 0.5.", prior=0.5, label="h")
+        bayes.model(
+            hypothesis,
+            observable=theta,
+            distribution=bayes.Beta(alpha=1, beta=1),
+            label="same_action",
+        )
+        conclusion = derive("C.", given=hypothesis, rationale="H implies C.", label="same_action")
+        conclusion.label = "c"
+
+    with pytest.raises(ValueError, match="duplicate action label 'same_action'"):
         compile_package_artifact(pkg)
