@@ -24,7 +24,7 @@ from gaia.lang import (
     # Structured-formula sugar (parameter / causal claims)
     parameter, causal,
     # Action verbs (recommended v0.5 surface)
-    observe, derive, compute, predict, infer, associate,
+    observe, derive, compute, infer, associate,
     equal, contradict, exclusive, decompose,
     depends_on,            # scaffold-only, not addressable via @label
     compose,               # @compose decorator
@@ -553,7 +553,7 @@ unified `@` syntax:
 
 `label` may be either a Knowledge label (the variable name of a `claim`,
 `note`, or `question`, or an explicit `label=`) or an Action label (the
-`label=` argument on `derive` / `observe` / `compute` / `predict` / `infer`
+`label=` argument on `derive` / `observe` / `compute` / `infer`
 / `associate` / `equal` / `contradict` / `exclusive` / `decompose` / `@compose`).
 Action labels resolve to the action's lowered IR target — a Strategy or
 Operator ID, which then resolves to the action's warrant helper Claim for
