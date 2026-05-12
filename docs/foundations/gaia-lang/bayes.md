@@ -39,10 +39,10 @@ from gaia.lang import bayes
 dist = bayes.Binomial(n=395, p=0.75)
 ```
 
-`from gaia.lang import predict` is the core Bayes-free prediction verb (a
-`Support` action). The legacy `bayes.predict(...)` function is kept as a
-deprecation alias for `bayes.model(...)` and emits `DeprecationWarning`;
-new packages should call `bayes.model(...)` directly.
+Bayes models are authored through `bayes.model(...)`. There is no
+`from gaia.lang import predict` core verb and no `bayes.predict(...)` alias in
+v0.5; use `derive(...)` for ordinary support steps and `bayes.model(...)` when
+declaring a predictive distribution for a hypothesis.
 
 The v1 distribution set is:
 
@@ -67,7 +67,7 @@ bayes.model(
     rationale: str = "",
     label: str | None = None,
     metadata: dict[str, Any] | None = None,
-) -> Claim                               # returns the prediction helper claim
+) -> Claim                               # returns the model helper claim
 
 bayes.likelihood(
     data: Claim | list[Claim] | tuple[Claim, ...],

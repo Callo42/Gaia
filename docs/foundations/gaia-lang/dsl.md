@@ -240,10 +240,6 @@ Deterministic derivation. Use when the conclusion follows from the explicit `giv
 
 Deterministic computation. Use either `compute(ResultClaim, fn=..., given=...)` or `@compute` with a `Claim` return annotation.
 
-### `predict(conclusion, *, given=(), background=None, rationale="", label=None)`
-
-Falsifiable prediction from premises or a model claim. Same skeleton as `derive` (conjunction over `given` + directed implication to `conclusion`); the subclass distinction records that the conclusion is being put forward as an empirical bet that future observations may falsify.
-
 ### `infer(evidence, *, hypothesis, given=(), p_e_given_h, p_e_given_not_h=0.5, background=None, rationale="", label=None)`
 
 Low-level probabilistic prediction/evidence link with a hand-written CPT. Prefer

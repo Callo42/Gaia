@@ -8,7 +8,6 @@ from gaia.lang import (
     equal,
     infer,
     observe,
-    predict,
 )
 from gaia.lang.runtime.action import (
     Associate,
@@ -21,7 +20,6 @@ from gaia.lang.runtime.action import (
     Equal,
     Exclusive,
     Infer,
-    Predict,
     Support,
 )
 from gaia.lang.runtime.package import CollectedPackage
@@ -74,7 +72,6 @@ def test_roles_cover_authored_action_shapes_and_sources():
     actions = (
         Derive(label="derive_c", conclusion=c, given=(a,), background=[bg], warrants=[warrant]),
         Compute(label="compute_d", conclusion=d, given=(c,)),
-        Predict(label="predict_d", conclusion=d, given=(a,)),
         DependsOn(label="depends_d", conclusion=d, given=(b,)),
         Infer(
             label="infer_b",
@@ -95,7 +92,6 @@ def test_roles_cover_authored_action_shapes_and_sources():
     index = roles_for_package(actions)
 
     assert "premise" in _role_names(index[a])
-    assert "prediction_basis" in _role_names(index[a])
     assert "hypothesis" in _role_names(index[a])
     assert "association_target" in _role_names(index[a])
     assert "equivalent_claim" in _role_names(index[a])
@@ -104,7 +100,6 @@ def test_roles_cover_authored_action_shapes_and_sources():
     assert "decomposition_part" in _role_names(index[a])
     assert "dependency_target" in _role_names(index[d])
     assert "computed_result" in _role_names(index[d])
-    assert "prediction" in _role_names(index[d])
     assert "likelihood_helper" in _role_names(index[helper])
     assert "association_helper" in _role_names(index[helper])
     assert "equivalence_helper" in _role_names(index[helper])
@@ -158,15 +153,6 @@ def test_roles_falls_back_for_legacy_support_action():
 
     assert _role_names(roles_for_claim(conclusion, (action,))) == ["conclusion"]
     assert _role_names(roles_for_claim(premise, (action,))) == ["premise"]
-
-
-def test_roles_for_core_predict_action():
-    with CollectedPackage("roles_predict") as pkg:
-        basis = Claim("Hypothesis and setup.")
-        prediction = predict("Falsifiable prediction.", given=basis, label="predict_result")
-
-    assert _role_names(roles_for_claim(prediction, pkg)) == ["prediction"]
-    assert _role_names(roles_for_claim(basis, pkg)) == ["prediction_basis"]
 
 
 def test_roles_for_package_accepts_collected_package_with_more_verbs():

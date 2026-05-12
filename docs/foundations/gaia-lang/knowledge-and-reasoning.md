@@ -23,23 +23,36 @@ Source references: `gaia/lang/runtime/knowledge.py`, `gaia/lang/runtime/action.p
 In v0.5 the authoring layer has **two parallel class trees**, both registered to the active `CollectedPackage`:
 
 ```
-Knowledge                         Action
-├── Claim (carries prior)         ├── Support
-│     formula: Formula | None     │     ├── Derive
-│     kind: ClaimKind             │     ├── Observe
-│       GENERAL                   │     ├── Compute
-│       PARAMETER                 │     └── Predict
-│       OBSERVATION               ├── Probabilistic
-│       QUANTIFIED                │     ├── Infer
-│       CAUSAL                    │     └── Associate
-├── Note  (no prior)              ├── Structural
-│     ├── Setting (deprecated)    │     ├── Equal
-│     └── Context (deprecated)    │     ├── Contradict
-└── Question                      │     ├── Exclusive
-                                  │     └── Decompose
-                                  ├── Scaffold
-                                  │     └── DependsOn
-                                  └── Compose
+Knowledge
+├── Claim (carries prior)
+│     formula: Formula | None
+│     kind: ClaimKind
+│       GENERAL
+│       PARAMETER
+│       OBSERVATION
+│       QUANTIFIED
+│       CAUSAL
+├── Note  (no prior)
+│     ├── Setting (deprecated)
+│     └── Context (deprecated)
+└── Question
+
+Action
+├── Support
+│     ├── Derive
+│     ├── Observe
+│     └── Compute
+├── Probabilistic
+│     ├── Infer
+│     └── Associate
+├── Structural
+│     ├── Equal
+│     ├── Contradict
+│     ├── Exclusive
+│     └── Decompose
+├── Scaffold
+│     └── DependsOn
+└── Compose
 ```
 
 `Knowledge` and `Action` are **siblings**, not parent/child. Knowledge is *what is being claimed*; Action is *how the author is connecting claims*. Action stays at the authoring layer — it does not become a first-class IR node. At compile time each Action is **lowered** into one or more IR objects (`Strategy`, `Operator`, helper `Knowledge`, or `Compose`) and reverse-attached to those objects via the `action_label` metadata key. See [§4 Action Lowering](#4-action-lowering).
@@ -120,7 +133,6 @@ Actions are author-facing verbs that connect claims. Every action is dataclass-s
 | `derive(c, given=..., rationale=...)` | `Derive` | Logical derivation from accepted premises |
 | `observe(c, given=..., rationale=...)` | `Observe` | Empirical observation. `given=()` is allowed and still produces a reviewable warrant; the conclusion's `Grounding` records the observation |
 | `compute(C, fn=..., given=..., rationale=...)` or `@compute` | `Compute` | Deterministic code execution; `code_hash` records the function source SHA-256 |
-| `predict(c, given=..., rationale=...)` | `Predict` | Falsifiable prediction from premises or a model claim |
 
 Support actions return the **conclusion** Claim. Authors typically chain calls by name:
 
@@ -198,7 +210,7 @@ The compiler (`gaia/lang/compiler/compile.py`) walks the package's registered ac
 
 | Action subclass | IR target | Helper claim emitted | Primary target for label resolution |
 |---|---|---|---|
-| `Derive / Observe / Compute / Predict` | `FormalStrategy` (conjunction + directed implication) | `implication_warrant` (review=true) | Strategy ID → warrant helper Claim QID (via `metadata['warrants']`) |
+| `Derive / Observe / Compute` | `FormalStrategy` (conjunction + directed implication) | `implication_warrant` (review=true) | Strategy ID → warrant helper Claim QID (via `metadata['warrants']`) |
 | `Infer` | `Strategy(type=infer)` with CPT | warrant helper Claim (review=true) | Strategy ID → warrant helper Claim QID |
 | `Associate` | `Strategy(type=associate)` with pairwise CPT | association helper Claim (review=true) | Strategy ID → association helper Claim QID |
 | `Equal` | `Operator(operator=equivalence)` | `equivalence_result` helper (review=true) | Operator ID → helper Claim QID |
@@ -264,7 +276,6 @@ Schema reference: [Claim Formula Schema](../../specs/2026-05-04-claim-formula-sc
 - **Distribution literals.** `bayes.Normal(mu=..., sigma=...)`, `bayes.Binomial(n=..., p=...)`, etc., backed by `scipy.stats`. They are typed values, not Knowledge nodes.
 - **`bayes.model(hypothesis, observable=..., distribution=...)`.** Returns a `PredictiveModel` action object that ties one hypothesis Claim to one predictive distribution over an observable Variable.
 - **`bayes.likelihood(data, model=..., against=[...], exclusivity=...)`.** Returns a `Likelihood` action object expressing model-preference. Lowers to `infer` strategies plus rigid relation operators expressing the chosen exclusivity contract (e.g., `exhaustive_pairwise_complement`).
-- **`bayes.predict(...)`.** Forward-prediction helper that returns a `Predict`-style action.
 
 `bayes.model / bayes.likelihood` actions go through the standard action lowering pipeline ([§4](#4-action-lowering)); they share the `action_label_map` table and emit warrant helper Claims that the reviewer sees. See [bayes.md](bayes.md) for the executable Mendel example, the full distribution list, and `gaia check` diagnostics.
 
@@ -385,7 +396,7 @@ Operators that emit a relation-result conclusion (`equivalence`, `contradiction`
 | `Claim` (no formula) | `Knowledge(type=claim)` | QID assigned, `content_hash = SHA-256(type \| format \| content \| sorted(parameters))` |
 | `Claim` (with formula) | `Knowledge(type=claim)` + formula-derived `Operator`s + helper `Knowledge`s | formula lowered via `lower_claim_formula()`; bindings stored on source claim metadata |
 | `Note` / `Question` | `Knowledge(type=note / question)` | QID assigned; no prior, no operator participation |
-| `Support` action (`Derive / Observe / Compute / Predict`) | `FormalStrategy` (conjunction + implication) + warrant helper `Knowledge` | action QID linked via `metadata["action_label"]`; warrant helper has `review=true` |
+| `Support` action (`Derive / Observe / Compute`) | `FormalStrategy` (conjunction + implication) + warrant helper `Knowledge` | action QID linked via `metadata["action_label"]`; warrant helper has `review=true` |
 | `Infer` / `Associate` action | `Strategy` with explicit CPT + warrant helper `Knowledge` | warrant helper is the primary label resolution target |
 | `Equal` / `Contradict` / `Exclusive` action | `Operator` + helper `Knowledge` | top-level operator gets `lco_*` ID; helper is reviewable |
 | `Decompose` action | formula `Operator`s over `parts` + `Operator(equivalence, [whole, formula_helper])` | enforces atomic-parts match and acyclicity |

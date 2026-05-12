@@ -71,7 +71,6 @@ from gaia.lang.runtime.action import (
     Equal,
     Exclusive,
     Observe,
-    Predict,
     Support,
 )
 from gaia.lang.runtime.action import (
@@ -1694,8 +1693,6 @@ def _support_action_pattern(action: Support) -> str:
         return "observation"
     if isinstance(action, Compute):
         return "computation"
-    if isinstance(action, Predict):
-        return "prediction"
     return "derivation"
 
 
