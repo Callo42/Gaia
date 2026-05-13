@@ -18,10 +18,11 @@ class Deferred:
 
 def test_public_distribution_surface_imports_from_gaia_lang_namespace():
     from gaia.lang import bayes
-    from gaia.lang.bayes import Binomial, Normal
+    from gaia.lang.bayes import BetaBinomial, Binomial, Normal
 
     required = {
         "Beta",
+        "BetaBinomial",
         "Binomial",
         "Cauchy",
         "ChiSquared",
@@ -33,8 +34,12 @@ def test_public_distribution_surface_imports_from_gaia_lang_namespace():
         "StudentT",
     }
     assert required.issubset(set(bayes.__all__))
+    assert BetaBinomial is bayes.BetaBinomial
     assert Binomial is bayes.Binomial
     assert Normal is bayes.Normal
+    assert bayes.BetaBinomial(n=10, alpha=1, beta=1).logpmf(5) == pytest.approx(
+        stats.betabinom.logpmf(5, n=10, a=1, b=1)
+    )
     assert bayes.Binomial(n=10, p=0.5).logpmf(5) == pytest.approx(stats.binom.logpmf(5, 10, 0.5))
     assert bayes.Normal(mu=0.0, sigma=1.0).logpdf(0.0) == pytest.approx(stats.norm.logpdf(0.0))
 
@@ -48,6 +53,13 @@ def test_public_distribution_surface_imports_from_gaia_lang_namespace():
             "logpmf",
             295,
             stats.binom.logpmf(295, 395, 0.75),
+        ),
+        (
+            lambda bayes: bayes.BetaBinomial(n=395, alpha=1.0, beta=1.0),
+            "betabinomial",
+            "logpmf",
+            295,
+            stats.betabinom.logpmf(295, n=395, a=1.0, b=1.0),
         ),
         (
             lambda bayes: bayes.Poisson(rate=3.0),
@@ -146,9 +158,35 @@ def test_distribution_validation_rejects_invalid_parameters():
 
     with pytest.raises(ValueError, match=r"Binomial.*p.*\[0, 1\]"):
         bayes.Binomial(n=10, p=1.1)
+    with pytest.raises(ValueError, match=r"BetaBinomial.*alpha.*> 0"):
+        bayes.BetaBinomial(n=10, alpha=0.0, beta=1.0)
     with pytest.raises(ValueError, match=r"Normal.*sigma.*> 0"):
         bayes.Normal(mu=0.0, sigma=0.0)
+    with pytest.raises(TypeError, match="discrete"):
+        bayes.BetaBinomial(n=10, alpha=1.0, beta=1.0).logpdf(5)
     with pytest.raises(TypeError, match="discrete"):
         bayes.Binomial(n=10, p=0.5).logpdf(5)
     with pytest.raises(TypeError, match="continuous"):
         bayes.Normal(mu=0.0, sigma=1.0).logpmf(0)
+
+
+def test_betabinomial_uniform_alpha_beta_equals_one_over_n_plus_one():
+    """BetaBinomial(n, 1, 1) recovers the integrate-over-Uniform[0, 1] marginal 1/(n+1).
+
+    This identity is the mathematical foundation of the Mendel example's
+    diffuse alternative: the closed-form uniform marginal ``P(k) = 1/(n+1)``
+    is exactly ``BetaBinomial(n, alpha=1, beta=1)`` evaluated at any
+    ``k ∈ [0, n]``. Pin the invariant here so future scipy / numerical
+    changes cannot silently break the example's stated derivation.
+    """
+    from gaia.lang import bayes
+
+    for n in (10, 100, 395):
+        bb = bayes.BetaBinomial(n=n, alpha=1.0, beta=1.0)
+        expected_logpmf = -math.log(n + 1)
+        for k in (0, n // 3, n // 2, n - 1, n):
+            assert bb.logpmf(k) == pytest.approx(expected_logpmf), (
+                f"BetaBinomial({n}, 1, 1).logpmf({k}) should equal -log({n + 1})"
+            )
+        assert bb.logpmf(n + 1) == -math.inf
+        assert bb.logpmf(-1) == -math.inf
