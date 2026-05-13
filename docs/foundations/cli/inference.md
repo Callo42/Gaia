@@ -332,7 +332,7 @@ Deterministic factors use Cromwell-softened potentials (`HIGH = 1 - EPS`,
 
 ### Strategy lowering
 
-Strategies are lowered by type. In v0.5 the canonical authoring path is through Action verbs (`derive` / `observe` / `compute` / `predict` / `infer` / `associate` / `equal` / `contradict` / `exclusive` / `decompose`); the entries below describe how each underlying strategy type lowers, regardless of whether it came from an Action verb or a legacy v5 strategy verb.
+Strategies are lowered by type. In v0.5 the canonical authoring path is through Action verbs (`derive` / `observe` / `compute` / `infer` / `associate` / `equal` / `contradict` / `exclusive` / `decompose`) plus the lifted `bayes.model(...)` / `bayes.likelihood(...)` helpers for predictive distributions; the entries below describe how each underlying strategy type lowers, regardless of whether it came from an Action verb or a legacy v5 strategy verb.
 
 - **`infer`**: `CONDITIONAL` factor with full CPT. With `given=G` on the action, the CPT gates on `G` so that the relation collapses to MaxEnt (0.5) when any of `G` is false (the *infer-with-given gating* introduced in v0.5). When `infer_use_degraded_noisy_and=True`, falls back to `CONJUNCTION + SOFT_ENTAILMENT`.
 - **`deduction`** (lowering target of `derive` and the deprecated `deduction` strategy): `CONJUNCTION` for multiple premises, then a hard `CONDITIONAL` implication with CPT `[0.5, 1 - EPS]`. Review gates whether the warrant enters the information set; it does not supply a numeric prior.

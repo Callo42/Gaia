@@ -24,7 +24,7 @@ from gaia.lang import (
     # Structured-formula sugar (parameter / causal claims)
     parameter, causal,
     # Action verbs (recommended v0.5 surface)
-    observe, derive, compute, predict, infer, associate,
+    observe, derive, compute, infer, associate,
     equal, contradict, exclusive, decompose,
     depends_on,            # scaffold-only, not addressable via @label
     compose,               # @compose decorator
@@ -239,10 +239,6 @@ Deterministic derivation. Use when the conclusion follows from the explicit `giv
 ### `compute(ClaimType, *, fn=None, given=(), background=None, rationale="", label=None)`
 
 Deterministic computation. Use either `compute(ResultClaim, fn=..., given=...)` or `@compute` with a `Claim` return annotation.
-
-### `predict(conclusion, *, given=(), background=None, rationale="", label=None)`
-
-Falsifiable prediction from premises or a model claim. Same skeleton as `derive` (conjunction over `given` + directed implication to `conclusion`); the subclass distinction records that the conclusion is being put forward as an empirical bet that future observations may falsify.
 
 ### `infer(evidence, *, hypothesis, given=(), p_e_given_h, p_e_given_not_h=0.5, background=None, rationale="", label=None)`
 
@@ -557,7 +553,7 @@ unified `@` syntax:
 
 `label` may be either a Knowledge label (the variable name of a `claim`,
 `note`, or `question`, or an explicit `label=`) or an Action label (the
-`label=` argument on `derive` / `observe` / `compute` / `predict` / `infer`
+`label=` argument on `derive` / `observe` / `compute` / `infer`
 / `associate` / `equal` / `contradict` / `exclusive` / `decompose` / `@compose`).
 Action labels resolve to the action's lowered IR target — a Strategy or
 Operator ID, which then resolves to the action's warrant helper Claim for

@@ -27,7 +27,7 @@ from gaia.lang.dsl.strategies import (
     support as _strategy_support,
 )
 from gaia.lang.dsl.sugar import causal, parameter
-from gaia.lang.dsl.support import compute, derive, observe, predict
+from gaia.lang.dsl.support import compute, derive, observe
 from gaia.lang.runtime.composition import compose, composition
 
 # Importing gaia.lang.dsl.support installs a same-named submodule on this package.
@@ -80,7 +80,6 @@ __all__ = [
     "observe",
     "or_",
     "parameter",
-    "predict",
     "question",
     "setting",
     "support",

@@ -32,8 +32,6 @@ def _strategy_action_type(strategy: Any) -> str:
         return "observe"
     if pattern == "computation":
         return "compute"
-    if pattern == "prediction":
-        return "predict"
     if pattern == "inference":
         return "infer"
     return "derive"
@@ -82,7 +80,7 @@ def _knowledge_review_info(knowledge: Any) -> tuple[str, str] | None:
         pattern = review_target.get("pattern")
         if isinstance(action_label, str) and action_label:
             if pattern == "prediction":
-                return action_label, "predict"
+                return action_label, "model"
             return action_label, str(pattern or "derive")
     return None
 

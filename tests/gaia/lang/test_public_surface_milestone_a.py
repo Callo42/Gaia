@@ -48,12 +48,23 @@ def test_milestone_a_public_surface():
     assert not missing, f"missing public exports: {sorted(missing)}"
 
 
-def test_gaia_lang_predict_is_core_bayes_free_verb():
+def test_gaia_lang_does_not_export_core_predict_verb():
     import gaia.lang as lang
 
-    assert lang.predict.__module__ == "gaia.lang.dsl.support"
+    assert "predict" not in dir(lang)
+    assert "predict" not in lang.__all__
+    assert not hasattr(lang, "Predict")
     assert "Binomial" not in lang.__all__
     assert "likelihood" not in lang.__all__
+    assert "Predict" not in lang.__all__
+
+
+def test_bayes_surface_uses_model_not_predict_alias():
+    from gaia.lang import bayes
+
+    assert hasattr(bayes, "model")
+    assert not hasattr(bayes, "predict")
+    assert "predict" not in bayes.__all__
 
 
 def test_gaia_lang_import_does_not_eagerly_import_bayes():

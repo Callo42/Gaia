@@ -21,7 +21,6 @@ from gaia.lang.runtime.action import (
     Exclusive,
     Infer,
     Observe,
-    Predict,
     Support,
 )
 from gaia.lang.runtime.knowledge import Claim
@@ -116,7 +115,7 @@ def _iter_role_occurrences(
 
 
 def _collect_observation_action_roles(action: Action, add: RoleAdder) -> bool:
-    """Collect roles for observation, compute, predict, and derive actions."""
+    """Collect roles for observation, compute, and derive actions."""
     if isinstance(action, Observe):
         add(action.conclusion, "observation")
         for given in action.given:
@@ -125,10 +124,6 @@ def _collect_observation_action_roles(action: Action, add: RoleAdder) -> bool:
         add(action.conclusion, "computed_result")
         for given in action.given:
             add(given, "compute_input")
-    elif isinstance(action, Predict):
-        add(action.conclusion, "prediction")
-        for given in action.given:
-            add(given, "prediction_basis")
     elif isinstance(action, Derive):
         add(action.conclusion, "conclusion")
         for given in action.given:

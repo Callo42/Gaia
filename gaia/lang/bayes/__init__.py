@@ -20,7 +20,6 @@ from gaia.lang.bayes.distributions import (
 from gaia.lang.bayes.runtime import Likelihood, PredictiveModel
 from gaia.lang.bayes.verbs.likelihood import likelihood
 from gaia.lang.bayes.verbs.model import model
-from gaia.lang.bayes.verbs.predict import predict
 from gaia.lang.runtime.action import Action
 from gaia.lang.runtime.roles import RoleAdder, register_role_handler
 
@@ -66,5 +65,4 @@ __all__ = [
     "UnresolvedParameterError",
     "likelihood",
     "model",
-    "predict",
 ]

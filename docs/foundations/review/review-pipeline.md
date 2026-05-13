@@ -18,7 +18,7 @@ Every authored Action that survives lowering produces at least one **review targ
 
 | Action family | Target kind | Audit question pattern |
 |---|---|---|
-| `Derive / Compute / Predict`, plus premise-backed `Observe` (`Support`) | `strategy` | "Does the warrant for &lt;action_label&gt; correctly entail &lt;conclusion&gt; from the listed premises?" |
+| `Derive / Compute`, plus premise-backed `Observe` (`Support`) | `strategy` | "Does the warrant for &lt;action_label&gt; correctly entail &lt;conclusion&gt; from the listed premises?" |
 | Zero-premise `Observe` | `action` | "Is the observation for &lt;conclusion&gt; reliable?" |
 | `Infer` / `Associate` (`Probabilistic`) | `strategy` | "Are the supplied conditional probabilities for &lt;action_label&gt; defensible?" |
 | `Equal / Contradict / Exclusive / Decompose` (`Structural`) | `operator` | "Is the structural relation declared by &lt;action_label&gt; correct?" |
