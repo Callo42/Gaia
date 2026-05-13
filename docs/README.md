@@ -7,7 +7,7 @@ Choose your path:
 ### I want to understand what Gaia is
 > You're a visitor, researcher, or evaluator.
 
-Start with [What is Gaia?](for-visitors/what-is-gaia.md), then see a [Worked Example](for-visitors/worked-example.md).
+Start with [What is Gaia?](for-visitors/what-is-gaia.md).
 
 ### I want to use Gaia to author knowledge packages
 > You're a researcher or research agent using the Gaia CLI.
