@@ -35,15 +35,18 @@ class Strategy:
     formal_expr: list[Any] | None = None
     sub_strategies: list[Strategy] = field(default_factory=list)
     composition_warrant: Knowledge | None = None
+    _source_module: str | None = field(default=None, init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         """Register the strategy with the active or inferred package."""
         pkg = _current_package.get()
+        source_module = None
         if pkg is None:
-            from gaia.lang.runtime.package import infer_package_from_callstack
+            from gaia.lang.runtime.package import infer_package_and_module
 
-            pkg = infer_package_from_callstack()
+            pkg, source_module = infer_package_and_module()
         if pkg is not None:
+            self._source_module = source_module
             pkg._register_strategy(self)
 
 
