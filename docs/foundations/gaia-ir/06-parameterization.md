@@ -159,6 +159,10 @@ register_prior(
 - `source_id` 默认 `"user_priors"`；engines/agents/reviewers 必须传入显式的 namespaced id；
 - 多次调用同一 claim 会 append 多条记录；resolution 时仲裁。
 
+编译时，winning record 会写入 `metadata["prior"]`, `metadata["prior_justification"]`,
+`metadata["prior_source_id"]`；所有候选 record 继续保留在 `metadata["prior_records"]`
+供 audit / diagnostics 使用。
+
 **source_id 命名约定**：
 
 | 命名空间 | 来源 |

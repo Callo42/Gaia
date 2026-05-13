@@ -1190,6 +1190,7 @@ def test_compile_respects_custom_resolution_policy(tmp_path):
     claim_meta = next(k for k in ir["knowledges"] if k.get("label") == "my_claim")["metadata"]
     assert claim_meta["prior"] == 0.8
     assert claim_meta["prior_justification"] == "Reviewer override."
+    assert claim_meta["prior_source_id"] == "reviewer_alice"
 
 
 def test_compile_no_priors_py_is_noop(tmp_path):

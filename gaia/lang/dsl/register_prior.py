@@ -3,15 +3,17 @@
 Also exposes :func:`resolve_priors_to_metadata`, the pure-computation step
 that walks a sequence of Claim objects, runs the supplied
 :class:`gaia.ir.ResolutionPolicy` over each claim's ``prior_records``, and
-writes the winner to ``metadata['prior']`` (and the winner's justification
-to ``metadata['prior_justification']``). This step is invoked both by the
-CLI's ``apply_package_priors`` (with the package-level ``RESOLUTION_POLICY``)
-and by ``compile_package_artifact`` (idempotently, with the default policy
-as a safety net for callers that bypass the CLI).
+writes the winner to ``metadata['prior']``, ``metadata['prior_justification']``,
+and ``metadata['prior_source_id']``. This step is invoked both by the CLI's
+``apply_package_priors`` (with the package-level ``RESOLUTION_POLICY``) and by
+``compile_package_artifact`` (idempotently, with a safety-net default policy
+for callers that bypass the CLI).
 
-This is the only sanctioned way to attach a prior to a Claim in Gaia v0.5+.
-The legacy ``claim(prior=...)`` kwarg and ``PRIORS = {...}`` dict in
-``priors.py`` are both rejected at compile time with migration errors.
+This is the canonical way to attach a load-bearing prior to a Claim in Gaia
+v0.5+. The ``claim(prior=...)`` kwarg remains as a low-priority compatibility
+shortcut that internally records a ``source_id="claim_inline"`` PriorRecord.
+The legacy ``PRIORS = {...}`` dict in ``priors.py`` is rejected at compile time
+with a migration error.
 
 Multiple priors may be registered for the same Claim from different sources
 (``"user_priors"`` for the author, ``"continuous_inference"`` for
@@ -23,7 +25,7 @@ and the ``prior_dissent`` / ``prior_overridden`` diagnostics).
 Records are stored on ``claim.metadata["prior_records"]`` as a list of dicts
 (JSON-friendly so they survive IR serialization). The compile-time pipeline
 in ``gaia.cli._packages`` reads this list, applies the ResolutionPolicy, and
-writes the winning value to ``claim.metadata["prior"]`` for downstream BP /
+writes the winning value/source/justification to metadata for downstream BP /
 render / brief consumers — none of which have to change.
 """
 
@@ -184,10 +186,11 @@ def resolve_priors_to_metadata(
     more dict records under ``metadata['prior_records']`` constructs the
     corresponding :class:`gaia.ir.PriorRecord` instances, asks the supplied
     :class:`gaia.ir.ResolutionPolicy` for the winner, and writes the winner's
-    value/justification to ``metadata['prior']`` /
-    ``metadata['prior_justification']``. All records (winner and losers) stay
-    in ``prior_records`` for downstream audit, ``gaia check --hole`` display,
-    and the ``prior_dissent`` / ``prior_overridden`` diagnostics.
+    value/justification/source to ``metadata['prior']`` /
+    ``metadata['prior_justification']`` / ``metadata['prior_source_id']``. All
+    records (winner and losers) stay in ``prior_records`` for downstream audit,
+    ``gaia check --hole`` display, and the ``prior_dissent`` /
+    ``prior_overridden`` diagnostics.
 
     Idempotent: re-running the same policy over the same records produces the
     same winner because ``prior_records`` is not mutated.
@@ -218,6 +221,7 @@ def resolve_priors_to_metadata(
             continue
         knowledge.metadata["prior"] = winner.value
         knowledge.metadata["prior_justification"] = winner.justification
+        knowledge.metadata["prior_source_id"] = winner.source_id
 
 
 def _record_from_dict(record_data: dict[str, Any], *, knowledge_id: str) -> Any:

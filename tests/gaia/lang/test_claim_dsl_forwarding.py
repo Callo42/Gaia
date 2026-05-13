@@ -97,6 +97,7 @@ def test_register_prior_overrides_claim_inline_under_default_policy():
     resolve_priors_to_metadata([c], default_resolution_policy())
     assert c.metadata["prior"] == 0.45
     assert "literature review" in c.metadata["prior_justification"]
+    assert c.metadata["prior_source_id"] == "user_priors"
 
 
 def test_register_prior_appends_record_with_default_source():

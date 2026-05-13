@@ -775,7 +775,9 @@ def _append_covered_prior_details(
         winning_prior = _get_prior(claim)
         metadata = claim.get("metadata") or {}
         records = metadata.get("prior_records") or []
-        winning_source = _winning_source_id(records, winning_prior)
+        winning_source = metadata.get("prior_source_id") or _winning_source_id(
+            records, winning_prior
+        )
         justification = metadata.get("prior_justification", "")
         suffix = f" (source: {winning_source})" if winning_source else ""
         lines.append(f"    {label}  prior={winning_prior}{suffix}")
