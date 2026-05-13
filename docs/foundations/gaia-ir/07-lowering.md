@@ -21,12 +21,14 @@ BP 的具体运行时图和消息传递细节见 [../bp/inference.md](../bp/infe
 
 对**需要概率参数**的运行时后端，常见还会额外输入：
 
-- 与 graph 匹配的参数输入
+- claim prior 参数输入
 - `ResolutionPolicy`
 - `prior_cutoff`
 - backend 自己的运行配置
 
-对采用 [06-parameterization.md](06-parameterization.md) 的 probabilistic backend，规范输入是 `LocalCanonicalGraph + Parameterization`。
+对采用 [06-parameterization.md](06-parameterization.md) 的 probabilistic
+backend，规范输入是 `LocalCanonicalGraph + claim Parameterization`；
+Strategy 条件概率参数来自 graph 内的 inline Strategy 字段。
 
 lowering 的输出不是新的 Gaia IR，而是**后端的数据表示**。
 在当前 BP 后端里，这个输出是 `FactorGraph`（variable nodes + factor nodes 的二部图）；在其他后端里，也可以是别的表示。
@@ -109,7 +111,7 @@ Strategy 是不确定性承载层。lowering 时，需要决定：
 
 - `premises`
 - `conclusion`
-- parameterization 层提供的外部参数
+- `Strategy` inline 概率参数
 
 共同决定。
 
@@ -124,7 +126,7 @@ lowering 时有两种合法方式：
 
 具体选哪种，由 backend 的展开策略决定。
 
-> **Open question：CompositeStrategy 折叠时的参数来源。** 当前 contract 只定义了参数化 leaf Strategy（读 StrategyParamRecord）和 FormalStrategy（从 FormalExpr + claim prior 导出）的折叠路径。CompositeStrategy 折叠为单个单元时的条件概率来源尚未定义——是需要显式 StrategyParamRecord，还是从 sub_strategies 自动 marginalize，或禁止折叠？待后续设计明确。
+> **Open question：CompositeStrategy 折叠时的参数来源。** 当前 contract 只定义了参数化 leaf Strategy（读 Strategy inline 参数）和 FormalStrategy（从 FormalExpr + claim prior 导出）的折叠路径。CompositeStrategy 折叠为单个单元时的条件概率来源尚未定义——是从 sub_strategies 自动 marginalize，还是禁止折叠？待后续设计明确。
 
 ### 4.3 FormalStrategy
 
@@ -161,7 +163,7 @@ Lowering 只消费参数层，不定义参数层。
 
 当前 contract 下：
 
-- 参数化 Strategy 从 `StrategyParamRecord` 读取外部条件参数
+- 参数化 Strategy 从 `Strategy` inline 字段读取条件参数
 - 普通 claim 从 `PriorRecord` 读取外部 prior
 - 结构型 helper claim **禁止**携带独立 PriorRecord（见 [04-helper-claims.md](04-helper-claims.md)）
 
