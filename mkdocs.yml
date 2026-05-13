@@ -53,7 +53,6 @@ nav:
   - Home: README.md
   - Start Here:
       - What Is Gaia?: for-visitors/what-is-gaia.md
-      - Worked Example: for-visitors/worked-example.md
       - Quick Start: for-users/quick-start.md
       - Hole And Bridge Tutorial: for-users/hole-bridge-tutorial.md
   - User Reference:
