@@ -61,7 +61,6 @@ build-backend = "setuptools.build_meta"
 include = [
     "gaia",
     "gaia.bp*",
-    "gaia.jaynes_ref*",
     "gaia.cli*",
     "gaia.inquiry*",
     "gaia.ir*",
@@ -92,11 +91,6 @@ markers = [
 
 [project.scripts]
 gaia = "gaia.cli.main:app"
-
-[tool.coverage.run]
-omit = [
-    "gaia/jaynes_ref/*",
-]
 
 [tool.coverage.report]
 exclude_lines = [
@@ -130,7 +124,6 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = [
     "tests.*",
-    "gaia.jaynes_ref.*",
 ]
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
@@ -197,8 +190,6 @@ ignore = [
     "RUF002",
     "RUF003",
 ]
-"jaynes_ref/tests/**/*.py" = ["D100", "D101", "D102", "D103", "D104", "D105", "D106", "D107", "RUF001", "RUF002", "RUF003", "E741"]
-"gaia/jaynes_ref/tests/**/*.py" = ["D100", "D101", "D102", "D103", "D104", "D105", "D106", "D107", "RUF001", "RUF002", "RUF003", "E741"]
 "gaia/trace/**/*.py" = ["RUF001", "RUF002", "RUF003"]
 "gaia/bp/*.py" = ["RUF001", "RUF002", "RUF003"]
 "gaia/inquiry/**/*.py" = ["RUF001", "RUF002", "RUF003"]
