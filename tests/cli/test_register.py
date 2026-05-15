@@ -38,7 +38,7 @@ def _write_package(pkg_dir) -> None:
     pkg_src = pkg_dir / "register_demo"
     pkg_src.mkdir()
     (pkg_src / "__init__.py").write_text(
-        "from gaia.lang import claim\n\n"
+        "from gaia.engine.lang import claim\n\n"
         'exported_claim = claim("A release-ready claim.")\n'
         '__all__ = ["exported_claim"]\n'
     )
@@ -60,7 +60,7 @@ def _write_dependency_with_local_hole(dep_dir) -> None:
     dep_src = dep_dir / "src" / "dep_bridge"
     dep_src.mkdir(parents=True)
     (dep_src / "__init__.py").write_text(
-        "from gaia.lang import claim, deduction\n\n"
+        "from gaia.engine.lang import claim, deduction\n\n"
         'missing_lemma = claim("A missing lemma.")\n'
         'main_theorem = claim("Main theorem.")\n'
         "deduction(premises=[missing_lemma], conclusion=main_theorem)\n"
@@ -88,7 +88,7 @@ def _write_package_with_local_hole_and_bridge(pkg_dir) -> None:
     pkg_src = pkg_dir / "register_bridge"
     pkg_src.mkdir()
     (pkg_src / "__init__.py").write_text(
-        "from gaia.lang import claim, deduction, fills\n"
+        "from gaia.engine.lang import claim, deduction, fills\n"
         "from dep_bridge import missing_lemma\n\n"
         'local_premise = claim("A local missing lemma.")\n'
         'main_claim = claim("A release-ready claim.")\n'
@@ -118,7 +118,7 @@ def _write_package_with_v6_infer(pkg_dir) -> None:
     pkg_src = pkg_dir / "register_infer"
     pkg_src.mkdir()
     (pkg_src / "__init__.py").write_text(
-        "from gaia.lang import claim, infer\n\n"
+        "from gaia.engine.lang import claim, infer\n\n"
         'hypothesis = claim("Hypothesis.")\n'
         'evidence = claim("Evidence.")\n'
         "infer(\n"
@@ -133,7 +133,7 @@ def _write_package_with_v6_infer(pkg_dir) -> None:
     )
     (pkg_src / "priors.py").write_text(
         "from . import evidence, hypothesis\n\n"
-        "from gaia.lang import register_prior\n"
+        "from gaia.engine.lang import register_prior\n"
         'register_prior(hypothesis, value=0.2, justification="Low base rate.")\n'
         'register_prior(evidence, value=0.9, justification="Observed evidence.")\n'
     )
@@ -169,7 +169,7 @@ def test_register_dry_run_emits_registration_plan(tmp_path):
     _write_package(pkg_dir)
     _init_git_repo(pkg_dir, remote_dir)
 
-    compile_result = runner.invoke(app, ["compile", str(pkg_dir)])
+    compile_result = runner.invoke(app, ["build", "compile", str(pkg_dir)])
     assert compile_result.exit_code == 0, compile_result.output
 
     _run(["git", "tag", "v1.2.0"], cwd=pkg_dir)
@@ -178,6 +178,7 @@ def test_register_dry_run_emits_registration_plan(tmp_path):
     result = runner.invoke(
         app,
         [
+            "pkg",
             "register",
             str(pkg_dir),
             "--repo",
@@ -221,7 +222,7 @@ def test_register_beliefs_use_v6_infer_action_cpt(tmp_path):
     _write_package_with_v6_infer(pkg_dir)
     _init_git_repo(pkg_dir, remote_dir)
 
-    compile_result = runner.invoke(app, ["compile", str(pkg_dir)])
+    compile_result = runner.invoke(app, ["build", "compile", str(pkg_dir)])
     assert compile_result.exit_code == 0, compile_result.output
 
     _run(["git", "tag", "v1.2.0"], cwd=pkg_dir)
@@ -230,6 +231,7 @@ def test_register_beliefs_use_v6_infer_action_cpt(tmp_path):
     result = runner.invoke(
         app,
         [
+            "pkg",
             "register",
             str(pkg_dir),
             "--repo",
@@ -253,7 +255,7 @@ def test_register_writes_registry_metadata_to_local_checkout(tmp_path):
     _init_git_repo(pkg_dir, remote_dir)
     _init_registry_repo(registry_dir)
 
-    compile_result = runner.invoke(app, ["compile", str(pkg_dir)])
+    compile_result = runner.invoke(app, ["build", "compile", str(pkg_dir)])
     assert compile_result.exit_code == 0, compile_result.output
 
     _run(["git", "tag", "v1.2.0"], cwd=pkg_dir)
@@ -262,6 +264,7 @@ def test_register_writes_registry_metadata_to_local_checkout(tmp_path):
     result = runner.invoke(
         app,
         [
+            "pkg",
             "register",
             str(pkg_dir),
             "--repo",
@@ -322,11 +325,11 @@ def test_register_dry_run_emits_nonempty_release_manifests(tmp_path, monkeypatch
     _write_package_with_local_hole_and_bridge(pkg_dir)
     monkeypatch.syspath_prepend(str(dep_dir / "src"))
 
-    dep_compile = runner.invoke(app, ["compile", str(dep_dir)])
+    dep_compile = runner.invoke(app, ["build", "compile", str(dep_dir)])
     assert dep_compile.exit_code == 0, dep_compile.output
 
     _init_git_repo(pkg_dir, remote_dir)
-    compile_result = runner.invoke(app, ["compile", str(pkg_dir)])
+    compile_result = runner.invoke(app, ["build", "compile", str(pkg_dir)])
     assert compile_result.exit_code == 0, compile_result.output
 
     _run(["git", "tag", "v1.2.0"], cwd=pkg_dir)
@@ -335,6 +338,7 @@ def test_register_dry_run_emits_nonempty_release_manifests(tmp_path, monkeypatch
     result = runner.invoke(
         app,
         [
+            "pkg",
             "register",
             str(pkg_dir),
             "--repo",
@@ -366,13 +370,13 @@ def test_register_writes_nonempty_release_manifests_to_local_checkout(tmp_path, 
     _write_package_with_local_hole_and_bridge(pkg_dir)
     monkeypatch.syspath_prepend(str(dep_dir / "src"))
 
-    dep_compile = runner.invoke(app, ["compile", str(dep_dir)])
+    dep_compile = runner.invoke(app, ["build", "compile", str(dep_dir)])
     assert dep_compile.exit_code == 0, dep_compile.output
 
     _init_git_repo(pkg_dir, remote_dir)
     _init_registry_repo(registry_dir)
 
-    compile_result = runner.invoke(app, ["compile", str(pkg_dir)])
+    compile_result = runner.invoke(app, ["build", "compile", str(pkg_dir)])
     assert compile_result.exit_code == 0, compile_result.output
 
     _run(["git", "tag", "v1.2.0"], cwd=pkg_dir)
@@ -381,6 +385,7 @@ def test_register_writes_nonempty_release_manifests_to_local_checkout(tmp_path, 
     result = runner.invoke(
         app,
         [
+            "pkg",
             "register",
             str(pkg_dir),
             "--repo",
@@ -411,7 +416,7 @@ def test_register_fails_when_release_dir_already_exists(tmp_path):
     _init_git_repo(pkg_dir, remote_dir)
     _init_registry_repo(registry_dir)
 
-    compile_result = runner.invoke(app, ["compile", str(pkg_dir)])
+    compile_result = runner.invoke(app, ["build", "compile", str(pkg_dir)])
     assert compile_result.exit_code == 0, compile_result.output
 
     package_dir = registry_dir / "packages" / "register-demo"
@@ -427,6 +432,7 @@ def test_register_fails_when_release_dir_already_exists(tmp_path):
     result = runner.invoke(
         app,
         [
+            "pkg",
             "register",
             str(pkg_dir),
             "--repo",
@@ -452,7 +458,7 @@ def test_register_no_orphan_branch_on_validation_failure(tmp_path):
     _init_git_repo(pkg_dir, remote_dir)
     _init_registry_repo(registry_dir)
 
-    compile_result = runner.invoke(app, ["compile", str(pkg_dir)])
+    compile_result = runner.invoke(app, ["build", "compile", str(pkg_dir)])
     assert compile_result.exit_code == 0, compile_result.output
 
     # Pre-create the release dir to trigger a validation failure
@@ -470,6 +476,7 @@ def test_register_no_orphan_branch_on_validation_failure(tmp_path):
     result = runner.invoke(
         app,
         [
+            "pkg",
             "register",
             str(pkg_dir),
             "--repo",
@@ -502,7 +509,7 @@ def test_register_fails_gracefully_when_checkout_fails(tmp_path, monkeypatch):
     _init_git_repo(pkg_dir, remote_dir)
     _init_registry_repo(registry_dir)
 
-    compile_result = runner.invoke(app, ["compile", str(pkg_dir)])
+    compile_result = runner.invoke(app, ["build", "compile", str(pkg_dir)])
     assert compile_result.exit_code == 0, compile_result.output
 
     _run(["git", "tag", "v1.2.0"], cwd=pkg_dir)
@@ -513,7 +520,9 @@ def test_register_fails_gracefully_when_checkout_fails(tmp_path, monkeypatch):
 
     def failing_run(args, *, cwd, check=True):
         if "checkout" in args and "-b" in args:
-            raise register_module.GaiaCliError("Error running git checkout -b: simulated failure")
+            raise register_module.GaiaPackagingError(
+                "Error running git checkout -b: simulated failure"
+            )
         return original_run(args, cwd=cwd, check=check)
 
     monkeypatch.setattr(register_module, "_run", failing_run)
@@ -521,6 +530,7 @@ def test_register_fails_gracefully_when_checkout_fails(tmp_path, monkeypatch):
     result = runner.invoke(
         app,
         [
+            "pkg",
             "register",
             str(pkg_dir),
             "--repo",
@@ -543,7 +553,7 @@ def test_register_fails_on_invalid_fills_target(tmp_path, monkeypatch):
     dep_src = dep_dir / "src" / "dep_register_missing"
     dep_src.mkdir(parents=True)
     (dep_src / "__init__.py").write_text(
-        "from gaia.lang import claim, deduction\n\n"
+        "from gaia.engine.lang import claim, deduction\n\n"
         'missing_lemma = claim("A missing lemma.")\n'
         'main_theorem = claim("Main theorem.")\n'
         "deduction(premises=[missing_lemma], conclusion=main_theorem)\n"
@@ -569,7 +579,7 @@ def test_register_fails_on_invalid_fills_target(tmp_path, monkeypatch):
         'uuid = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"\n'
     )
     (pkg_dir / "register_demo" / "__init__.py").write_text(
-        "from gaia.lang import claim, fills\n"
+        "from gaia.engine.lang import claim, fills\n"
         "from dep_register_missing import missing_lemma\n\n"
         'exported_claim = claim("A release-ready claim.")\n'
         "fills(source=exported_claim, target=missing_lemma)\n"
@@ -577,7 +587,7 @@ def test_register_fails_on_invalid_fills_target(tmp_path, monkeypatch):
     )
     _init_git_repo(pkg_dir, remote_dir)
 
-    compile_result = runner.invoke(app, ["compile", str(pkg_dir)])
+    compile_result = runner.invoke(app, ["build", "compile", str(pkg_dir)])
     assert compile_result.exit_code != 0
     assert "missing .gaia/manifests/premises.json" in compile_result.output
 
@@ -587,6 +597,7 @@ def test_register_fails_on_invalid_fills_target(tmp_path, monkeypatch):
     result = runner.invoke(
         app,
         [
+            "pkg",
             "register",
             str(pkg_dir),
             "--repo",

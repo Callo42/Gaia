@@ -14,7 +14,7 @@ def _write_v6_warrant_package(pkg_dir, *, with_prior: bool = False) -> None:
     pkg_src = pkg_dir / "check_warrants"
     pkg_src.mkdir()
     (pkg_src / "__init__.py").write_text(
-        "from gaia.lang import claim, derive, equal\n\n"
+        "from gaia.engine.lang import claim, derive, equal\n\n"
         'premise = claim("Evidence A is reliable.")\n'
         'evidence = claim("Evidence B matches Evidence A.")\n'
         'same = equal(premise, evidence, rationale="The two evidence records match.", '
@@ -30,7 +30,7 @@ def _write_v6_warrant_package(pkg_dir, *, with_prior: bool = False) -> None:
     if with_prior:
         (pkg_src / "priors.py").write_text(
             "from . import premise\n\n"
-            "from gaia.lang import register_prior\n\n"
+            "from gaia.engine.lang import register_prior\n\n"
             "register_prior(premise, value=0.83, "
             'justification="Author confidence in the observed evidence.")\n\n'
         )
@@ -40,10 +40,10 @@ def test_check_warrants_outputs_review_list(tmp_path):
     pkg_dir = tmp_path / "check_warrants"
     _write_v6_warrant_package(pkg_dir)
 
-    compile_result = runner.invoke(app, ["compile", str(pkg_dir)])
+    compile_result = runner.invoke(app, ["build", "compile", str(pkg_dir)])
     assert compile_result.exit_code == 0, compile_result.output
 
-    result = runner.invoke(app, ["check", "--warrants", str(pkg_dir)])
+    result = runner.invoke(app, ["build", "check", "--warrants", str(pkg_dir)])
     assert result.exit_code == 0, result.output
     assert "Review warrants:" in result.output
     assert "github:check_warrants::action::derive_conclusion" in result.output
@@ -57,10 +57,10 @@ def test_check_warrants_blind_omits_author_priors_and_status_values(tmp_path):
     pkg_dir = tmp_path / "check_warrants"
     _write_v6_warrant_package(pkg_dir, with_prior=True)
 
-    compile_result = runner.invoke(app, ["compile", str(pkg_dir)])
+    compile_result = runner.invoke(app, ["build", "compile", str(pkg_dir)])
     assert compile_result.exit_code == 0, compile_result.output
 
-    result = runner.invoke(app, ["check", "--warrants", "--blind", str(pkg_dir)])
+    result = runner.invoke(app, ["build", "check", "--warrants", "--blind", str(pkg_dir)])
     assert result.exit_code == 0, result.output
     assert "Review warrants:" in result.output
     assert "github:check_warrants::action::derive_conclusion" in result.output

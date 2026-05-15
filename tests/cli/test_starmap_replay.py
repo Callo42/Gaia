@@ -49,7 +49,7 @@ def test_starmap_replay_against_fixture(tmp_path):
     out_path = tmp_path / "replay.html"
     result = runner.invoke(
         app,
-        ["starmap-replay", str(FIXTURE_DIR), "--out", str(out_path)],
+        ["inspect", "starmap-replay", str(FIXTURE_DIR), "--out", str(out_path)],
     )
     assert result.exit_code == 0, result.output
     assert out_path.exists()
@@ -113,7 +113,7 @@ def test_starmap_replay_default_output_path(tmp_path):
     pkg_dir = tmp_path / "mendelian_inheritance"
     shutil.copytree(FIXTURE_DIR, pkg_dir)
 
-    result = runner.invoke(app, ["starmap-replay", str(pkg_dir)])
+    result = runner.invoke(app, ["inspect", "starmap-replay", str(pkg_dir)])
     assert result.exit_code == 0, result.output
     expected = pkg_dir / ".gaia" / "starmap-replay.html"
     assert expected.is_file()
@@ -124,7 +124,7 @@ def test_starmap_replay_missing_logs(tmp_path):
     pkg_dir = tmp_path / "empty_pkg"
     (pkg_dir / "artifacts" / "lkm-discovery").mkdir(parents=True)
 
-    result = runner.invoke(app, ["starmap-replay", str(pkg_dir)])
+    result = runner.invoke(app, ["inspect", "starmap-replay", str(pkg_dir)])
     assert result.exit_code != 0
     assert "missing timeline log" in result.output
 
@@ -133,7 +133,7 @@ def test_starmap_replay_path_must_be_directory(tmp_path):
     """Non-directory path is rejected up front."""
     f = tmp_path / "not_a_dir.txt"
     f.write_text("hi")
-    result = runner.invoke(app, ["starmap-replay", str(f)])
+    result = runner.invoke(app, ["inspect", "starmap-replay", str(f)])
     assert result.exit_code != 0
     assert "is not a directory" in result.output
 
@@ -1498,12 +1498,6 @@ def _real_pkg_dir(name: str) -> Path | None:
 
 def _final_state_parity(pkg_dir: Path) -> tuple[dict, dict]:
     """Return (static_counts, replay_counts) for *pkg_dir*."""
-    from gaia.cli._packages import (
-        apply_package_priors,
-        compile_loaded_package_artifact,
-        ensure_package_env,
-        load_gaia_package,
-    )
     from gaia.cli.commands._dot import to_dot
     from gaia.cli.commands._graph_json import generate_graph_json
     from gaia.cli.commands._render_priors import param_data_from_ir_metadata
@@ -1513,6 +1507,12 @@ def _final_state_parity(pkg_dir: Path) -> tuple[dict, dict]:
         RETRIEVAL_LOG_NAME,
         _is_replayable,
         _read_jsonl,
+    )
+    from gaia.engine.packaging import (
+        apply_package_priors,
+        compile_loaded_package_artifact,
+        ensure_package_env,
+        load_gaia_package,
     )
 
     ensure_package_env(pkg_dir)
