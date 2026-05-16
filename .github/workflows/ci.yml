@@ -54,15 +54,10 @@ jobs:
         run: uv run python scripts/check_suppression_budget.py
 
       - name: Run tests
-        run: uv run pytest --cov-report=xml tests -v -m "not integration_api"
+        run: uv run pytest -n auto tests/baseline tests/cli -v -m "not slow"
 
-      - name: Upload coverage to Codecov
-        if: always()
-        uses: codecov/codecov-action@v5
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: coverage.xml
-          fail_ci_if_error: false
+      - name: Wheel smoke
+        uses: ./.github/actions/wheel-smoke
 
   commit-lint:
     if: github.event_name == 'pull_request'

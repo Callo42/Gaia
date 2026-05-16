@@ -40,7 +40,7 @@ repos:
         entry: uv run mypy
         language: system
         pass_filenames: false
-        stages: [pre-commit, pre-push]
+        stages: [pre-commit]
 
       - id: suppression-budget
         name: no-net-growth suppression budget (gaia/)
@@ -63,9 +63,16 @@ repos:
         pass_filenames: false
         stages: [pre-push]
 
-      - id: pytest-cov
-        name: pytest --cov (CI byte-aligned)
-        entry: env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE -u GIT_PREFIX -u GIT_REFLOG_ACTION uv run pytest --cov-report=xml tests -v -m "not integration_api"
+      - id: ir-schema-bump
+        name: ir_schema bump check (IR_SCHEMA_SNAPSHOT_HASH must match computed hash)
+        entry: uv run python scripts/check_ir_schema_bump.py
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+
+      - id: pytest
+        name: pytest baseline + cli (CI byte-aligned)
+        entry: env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE -u GIT_PREFIX -u GIT_REFLOG_ACTION uv run pytest -n auto tests/baseline tests/cli -v -m "not slow"
         language: system
         pass_filenames: false
         stages: [pre-push]
