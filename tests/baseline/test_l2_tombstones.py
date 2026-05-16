@@ -49,6 +49,7 @@ def test_namespace_tombstones_have_engine_targets() -> None:
         ("gaia.ir.operator", "gaia.engine.ir.operator"),
         ("gaia.engine.lang.types.primitives", "gaia.engine.lang.formula.primitives"),
         ("gaia.engine.logic.propositional", "gaia.engine.ir.logic.propositional"),
+        ("gaia.logic.propositional", "gaia.engine.ir.logic.propositional"),
         ("gaia.trace.schema", "gaia.engine.trace.schema"),
     ],
 )

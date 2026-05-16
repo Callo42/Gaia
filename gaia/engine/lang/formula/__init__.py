@@ -18,6 +18,9 @@ from gaia.engine.lang.formula.symbols import FunctionSymbol, PredicateSymbol
 from gaia.engine.lang.formula.term import ArithOp, Constant, FunctionApp, Term, is_term
 
 
+# Lazy by design: quantifier imports runtime.variable, while runtime.variable
+# imports formula.primitives. Eagerly importing Exists/Forall here closes that
+# cycle while formula/__init__.py is still loading.
 def __getattr__(name: str) -> object:
     if name in {"Exists", "Forall"}:
         from gaia.engine.lang.formula.quantifier import Exists, Forall
