@@ -6,7 +6,10 @@ from gaia.engine.lang.compiler.extensions import (
     ActionLoweringContext,
     ActionLoweringResult,
     register_action_lowerer,
+    registered_action_lowerers,
 )
+
+_LOWERER_NAME = "bayes"
 
 
 def _is_bayes_action(action: object) -> bool:
@@ -34,8 +37,36 @@ def _lower_bayes_actions(context: ActionLoweringContext) -> ActionLoweringResult
 
 
 def register_bayes_lowerer() -> None:
-    """Register Bayes action lowering with the Gaia Lang compiler."""
-    register_action_lowerer("bayes", handles=_is_bayes_action, lower=_lower_bayes_actions)
+    """Register Bayes action lowering with the Gaia Lang compiler.
+
+    Identity-aware idempotency: returns early only when the existing
+    ``"bayes"`` registration uses the official ``_is_bayes_action`` /
+    ``_lower_bayes_actions`` pair. If a different lowerer is already
+    registered under the ``"bayes"`` name, raise :class:`ValueError`
+    instead of silently shadowing it — that case is the exact scenario the
+    duplicate-name guard on :func:`register_action_lowerer` exists to
+    surface, and a name-only idempotency check would mask it.
+
+    Safe to call from both ``gaia.engine.bayes.__init__`` (import-time
+    self-registration) and ``discover_and_register_extensions`` (called by
+    the compiler at compile time).
+    """
+    for existing in registered_action_lowerers():
+        if existing.name != _LOWERER_NAME:
+            continue
+        if existing.handles is _is_bayes_action and existing.lower is _lower_bayes_actions:
+            return
+        raise ValueError(
+            f"action lowerer {_LOWERER_NAME!r} already registered with a "
+            f"different handler/lowerer pair; refusing to silently shadow. "
+            f"Pass override=True to register_action_lowerer if the "
+            f"replacement was intentional."
+        )
+    register_action_lowerer(
+        _LOWERER_NAME,
+        handles=_is_bayes_action,
+        lower=_lower_bayes_actions,
+    )
 
 
 __all__ = ["BayesLoweringResult", "lower_bayes_claims"]
