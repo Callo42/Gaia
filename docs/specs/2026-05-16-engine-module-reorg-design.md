@@ -171,30 +171,77 @@ Pure AST utilities, not "logic analysis":
 
 These are syntactic helpers tied to AST structure. They do not need solvers; they live close to their callers (`lang.formula.predicate`, `lang.dsl.decompose`, `lang.compiler.lower_formula`).
 
-## 6. Host vs Extension Framing
+## 6. Host vs Extension — Two Layers, Different Today's Realities
 
-After PR b lands, `engine.lang/` and `engine.bayes/` are **not symmetric peers**. The dependency graph is:
+After PR b lands, `engine.lang/` and `engine.bayes/` are **not symmetric peers** in the runtime-class hierarchy, but **today's module-import graph is bidirectional**, not unidirectional. This section is precise about which layer carries the host/extension semantics and which layer does not, because PR b only addresses one of the two.
+
+### 6.1 Runtime-class layer (clean host/extension)
+
+`bayes.* → lang.*` (extension built on host):
+
+- `bayes.runtime.actions.BayesInference` inherits `lang.runtime.action.Reasoning`
+- `bayes.runtime.actions.PredictiveModel / Likelihood` inherit `BayesInference`
+- `bayes.compiler.*` uses helpers from `lang.compiler.*`
+- `bayes.runtime.actions.Likelihood` constructs `lang.runtime.action.Contradict / Exclusive` via the auto-structural mechanism
+- `bayes.*` consumes the formula AST in `lang.formula.*`
+
+This is what the BayesInference shape decision (`2026-05-15-causal-cleanup-reasoning-shapes.md` §4.2) sets up: a runtime-class hierarchy where Bayes records are formal extensions of the base `Reasoning` hierarchy. Nothing in `lang.runtime.action` inherits from anything in `bayes`.
+
+### 6.2 Module-import layer (bidirectional today)
+
+`lang.* → bayes.*` (host consuming extension; **persists after PR b**):
+
+| Site | What it does |
+|---|---|
+| `gaia/engine/lang/__init__.py:138-142` `__getattr__("bayes")` | Lazy-imports `gaia.engine.lang.bayes` (or post-PR-b `gaia.engine.bayes`) so the documented public form `from gaia.engine.lang import bayes` keeps working |
+| `gaia/engine/lang/compiler/compile.py::_lower_bayes_actions` | Calls `from gaia.engine.lang.bayes.compiler import lower_bayes_claims` directly inside the core compile pipeline |
+| `gaia/engine/lang/runtime/distribution.py` (10+ sites) | Top-level distribution factories `Normal / LogNormal / Beta / Exponential / Gamma / StudentT / Cauchy / ChiSquared / Binomial / Poisson` lazy-import their backing implementations from `bayes.distributions.*` and `bayes.adapters.scipy_backend` |
+
+So the import graph is:
 
 ```
-bayes.runtime ─→ lang.runtime          (BayesInference inherits Reasoning)
-bayes.compiler ─→ lang.compiler         (compile-time helpers)
-bayes.runtime / verbs ─→ lang.formula   (predicate logic AST shared)
-bayes.* ─→ lang.refs / lang.review      (shared services)
-bayes.* ─→ engine.ir, engine.bp         (downstream)
-lang.* ↛ bayes.*                        (zero reverse imports)
+bayes.runtime ─→ lang.runtime           (extension extends host runtime classes)
+bayes.compiler ─→ lang.compiler          (extension reuses host compile helpers)
+bayes.* ─→ lang.formula / lang.refs / lang.review   (shared services)
+bayes.* ─→ engine.ir / engine.bp        (downstream)
+
+lang.__init__ ─→ bayes                   (lazy attribute hook for public API)
+lang.compiler.compile ─→ bayes.compiler  (Bayes lowering hook)
+lang.runtime.distribution ─→ bayes.distributions / bayes.adapters
+                                        (top-level Distribution factories
+                                         delegate to Bayes implementations)
 ```
 
-`lang/` is the **host**: it defines the base `Reasoning` hierarchy, the formula AST, and shared services (refs, review). `bayes/` is an **extension**: it adds new `Reasoning` subclasses, new verbs, and a Bayes-specific compile path that all plug into the host.
+### 6.3 What PR b does (and does not) about the bidirectional layer
 
-This framing answers two recurring naming questions:
+PR b's scope is **path migration only**:
 
-1. *"Should `lang/` be renamed `core/` for symmetry with `bayes/`?"* — No. `core/peer-bayes/peer-causal/...` would imply a flat peer hierarchy, but the import graph is hub-and-spoke. The `lang` name preserves "this is the language host module"; `bayes` (and future causal/statistics) extend it.
+- move the directory tree `engine/lang/bayes/` → `engine/bayes/`
+- update the three reverse-import sites above to point at the new path:
+  - `lang/__init__.py:140` `import_module("gaia.engine.lang.bayes")` → `import_module("gaia.engine.bayes")`
+  - `lang/compiler/compile.py:1826` `from gaia.engine.lang.bayes.compiler import …` → `from gaia.engine.bayes.compiler import …`
+  - all `lang/runtime/distribution.py` `from gaia.engine.lang.bayes.{distributions,adapters} import …` → `from gaia.engine.bayes.{distributions,adapters} import …`
+- install the tombstone for `gaia.engine.lang.bayes` (see §9)
+
+PR b **does not** eliminate the reverse imports. The reasons:
+
+1. `from gaia.engine.lang import bayes` is documented public API in `docs/foundations/gaia-lang/bayes.md` and `docs/for-users/language-reference.md`. Removing or reshaping it requires a deprecation cycle and user-facing communication that is out of scope here.
+2. Top-level distribution factories `Normal / Beta / ...` under `lang.runtime.distribution` are part of the v0.5 documented surface; relocating them is its own Bayes-API design question (do they belong in `bayes.runtime.distribution`? do they stay in `lang.runtime` as type-aware wrappers? do they split?). Cannot be decided in a path-migration PR.
+3. `compile._lower_bayes_actions` is a hard-coded lowering hook into Bayes. Cleanly replacing it with a lang-only contract requires designing a plugin/registry mechanism — substantial follow-up work.
+
+PR b therefore preserves the **runtime-class** host/extension structure (clean, single-direction) while leaving the **module-import** structure bidirectional. The path migration is justified by the precedent argument in §4.1 (BayesInference is runtime-first-class; its module path should match) without overloading PR b with a decoupling refactor.
+
+### 6.4 Naming questions answered
+
+1. *"Should `lang/` be renamed `core/` for symmetry with `bayes/`?"* — No. The runtime-class direction is host/extension (§6.1) and `lang` accurately names the host. The module-import bidirectionality (§6.2) does not turn `lang/` into a peer of `bayes/`; lang is still the host that consumes (a few) extension-implemented services because that was the v0.5 design choice for distribution factories and the public `lang.bayes` namespace shortcut.
 
 2. *"Why does `bayes.runtime` mirror `lang.runtime` while `lang.runtime` does not have a `bayes/` subdirectory?"* — Because each extension owns its own Reasoning subclasses and verbs but reuses the host's base hierarchy. The mirror is structural, not hierarchical.
 
-Future extensions follow this contract:
+### 6.5 Future-extension contract
 
-> Any new reasoning family that introduces its own runtime classes (e.g., `CausalEdge` per `2026-05-15-causal-cleanup-reasoning-shapes.md` §6) lands as a peer module under `gaia.engine.<family>/`, not under `gaia.engine.lang.<family>/`. The peer module follows the same internal layout as `gaia.engine.bayes/`: at minimum `runtime/` + `dsl/`; optionally `compiler/`, `distributions/`, `adapters/` as needed. The peer extension may freely import from `gaia.engine.lang.*` (host) and `gaia.engine.ir/` / `engine.bp/` (downstream); the host must not import from any extension.
+> Any new reasoning family that introduces its own runtime classes (e.g., `CausalEdge` per `2026-05-15-causal-cleanup-reasoning-shapes.md` §6) lands as a peer module under `gaia.engine.<family>/`, not under `gaia.engine.lang.<family>/`. The peer module follows the same internal layout as `gaia.engine.bayes/`: at minimum `runtime/` + `dsl/`; optionally `compiler/`, `distributions/`, `adapters/` as needed. The peer extension freely imports from `gaia.engine.lang.*` (host) and `gaia.engine.ir/` / `engine.bp/` (downstream).
+>
+> Whether the host imports back from the new extension (mirroring today's `lang → bayes` reality for distribution factories and compile hooks) is a per-extension decision, not a default; it should be flagged explicitly when the extension's design spec is written, and a follow-up to §13's "Lang/Bayes import isolation" should consider the new extension's reverse-import sites.
 
 ## 7. Target State
 
@@ -245,12 +292,27 @@ Two sequenced PRs to minimize blast radius and let reviewers focus on one struct
 
 ### 8.1 PR a — Single-file consolidation + logic demotion
 
-**Scope:** Two file moves, two new tombstones, three deleted shells, no semantic changes.
+**Scope:** Two file moves, two new tombstone shims, two new namespace registry entries, no semantic changes.
 
-| From | To |
+| File | Action |
 |---|---|
-| `gaia/engine/lang/types/primitives.py` | `gaia/engine/lang/formula/primitives.py` |
-| `gaia/engine/logic/propositional.py` | `gaia/engine/ir/logic/propositional.py` |
+| `gaia/engine/lang/types/primitives.py` | Move to `gaia/engine/lang/formula/primitives.py` |
+| `gaia/engine/lang/types/__init__.py` | **Replace contents** with the 4-line tombstone shim (see below) — directory kept |
+| `gaia/engine/logic/propositional.py` | Move to `gaia/engine/ir/logic/propositional.py` |
+| `gaia/engine/logic/__init__.py` | **Replace contents** with the 4-line tombstone shim — directory kept |
+| `gaia/engine/ir/logic/__init__.py` | **New file** with explicit scope notes (see below) |
+
+The tombstone shim follows the alpha-0 convention used by `gaia/bp/__init__.py`, `gaia/lang/__init__.py`, etc.:
+
+```python
+"""Alpha 0 tombstone — gaia.engine.lang.types relocated to gaia.engine.lang.formula."""
+
+from gaia._legacy_imports import _tombstoned_namespace_getattr
+
+__getattr__ = _tombstoned_namespace_getattr(
+    "gaia.engine.lang.types", "gaia.engine.lang.formula"
+)
+```
 
 Tombstones added to `TOMBSTONED_NAMESPACES`:
 
@@ -265,11 +327,6 @@ Existing entry updated:
 # old: "gaia.logic": "gaia.engine.logic"
 "gaia.logic": "gaia.engine.ir.logic",
 ```
-
-Deleted (after tombstones install):
-
-- `gaia/engine/lang/types/__init__.py` (and the directory if no other contents)
-- `gaia/engine/logic/__init__.py` (and the directory)
 
 `gaia/engine/lang/__init__.py`: continue re-exporting `Bool, Nat, Real, Probability, PrimitiveType` so user-facing import `from gaia.engine.lang import Bool` keeps working unchanged.
 
@@ -303,29 +360,39 @@ Estimated diff: ~120 lines (file moves + tombstone updates + new `__init__.py` +
 
 ### 8.2 PR b — Bayes promotion + verbs/dsl rename
 
-**Scope:** One subtree move, one rename, one tombstone, repo-wide import path updates.
+**Scope:** One subtree move, one internal rename, one tombstone shim, repo-wide import-path updates including the three known reverse-import sites in `lang/`.
 
-| From | To |
+| File / Directory | Action |
 |---|---|
-| `gaia/engine/lang/bayes/` (entire tree) | `gaia/engine/bayes/` |
-| `gaia/engine/bayes/verbs/*` (post-move) | `gaia/engine/bayes/dsl/*` |
+| `gaia/engine/lang/bayes/` (entire subtree) | Move to `gaia/engine/bayes/` |
+| `gaia/engine/bayes/verbs/` (post-move) | Rename to `gaia/engine/bayes/dsl/` |
+| `gaia/engine/lang/bayes/__init__.py` (the now-empty old location) | **Replace contents** with tombstone shim (see §8.1 pattern) — directory kept |
 
-Tombstone added:
+Tombstone added to `TOMBSTONED_NAMESPACES`:
 
 ```python
 "gaia.engine.lang.bayes": "gaia.engine.bayes",
 ```
 
-Repo-wide import rewrites:
+Repo-wide import-path rewrites — three categories:
 
-- `from gaia.engine.lang.bayes import ...` → `from gaia.engine.bayes import ...`
-- `from gaia.engine.lang.bayes.runtime import ...` → `from gaia.engine.bayes.runtime import ...`
-- `from gaia.engine.lang.bayes.verbs import ...` → `from gaia.engine.bayes.dsl import ...`
-- internal cross-imports in `bayes/*` updated similarly
+1. **External callers** (tests, examples, package code, docs):
+   - `from gaia.engine.lang.bayes import ...` → `from gaia.engine.bayes import ...`
+   - `from gaia.engine.lang.bayes.runtime import ...` → `from gaia.engine.bayes.runtime import ...`
+   - `from gaia.engine.lang.bayes.verbs import ...` → `from gaia.engine.bayes.dsl import ...`
+
+2. **Internal cross-imports inside the moved subtree** — paths inside `bayes/*` referring to siblings need rewriting from `gaia.engine.lang.bayes.X` to `gaia.engine.bayes.X`.
+
+3. **Three `lang → bayes` reverse-import sites** (per §6.2) — these continue to exist after PR b but the path is updated:
+   - `gaia/engine/lang/__init__.py:140` `import_module("gaia.engine.lang.bayes")` → `import_module("gaia.engine.bayes")`
+   - `gaia/engine/lang/compiler/compile.py:1826` `from gaia.engine.lang.bayes.compiler import lower_bayes_claims` → `from gaia.engine.bayes.compiler import lower_bayes_claims`
+   - all `gaia/engine/lang/runtime/distribution.py` lazy imports — for example line 169 `from gaia.engine.lang.bayes.distributions.base import _BaseDistribution` → `from gaia.engine.bayes.distributions.base import _BaseDistribution`; same for `bayes.adapters.scipy_backend` and the 10 distribution factories `Normal / LogNormal / Beta / Exponential / Gamma / StudentT / Cauchy / ChiSquared / Binomial / Poisson`
+
+Note: the `verbs/ → dsl/` rename inside `bayes/` does not require its own namespace tombstone because `engine.lang.bayes.verbs` was an internal sub-package; the public `bayes.dsl/__init__.py` re-exports the same names (`model`, `likelihood`).
 
 Doc updates (see §11).
 
-Estimated diff: ~350-450 lines (mostly mechanical import path updates + tombstone install + docs sync).
+Estimated diff: ~400-500 lines (mostly mechanical import path updates including the lang→bayes lazy imports + tombstone install + docs sync).
 
 ### 8.3 Sequencing rationale
 
@@ -335,25 +402,49 @@ PR b second because it depends on the BayesInference decision being settled (whi
 
 ## 9. Tombstone Strategy
 
-Reuse the existing `gaia/_legacy_imports.py` machinery:
+Reuse the existing `gaia/_legacy_imports.py` machinery, but be careful about which import form the meta-path finder actually intercepts. The finder logic is:
 
-- `TOMBSTONED_NAMESPACES` registers each old → new redirect
-- `_TombstonedSubmoduleFinder` (already installed at module load time) intercepts `import gaia.<old>.<sub>` style imports
-- `_tombstoned_namespace_getattr` handles `from gaia.<old> import X` style imports
-
-Each tombstone raises a clean `ImportError` (alpha-0 strict policy — not a deprecation warning):
-
+```python
+# gaia/_legacy_imports.py:91-107 (paraphrased)
+def find_spec(self, fullname, path, target=None):
+    for old_ns, new_ns in TOMBSTONED_NAMESPACES.items():
+        prefix = f"{old_ns}."
+        if fullname.startswith(prefix):           # ← exact match excluded
+            ...
+            return ModuleSpec(...)
+    return None
 ```
-gaia.engine.logic.propositional has moved to gaia.engine.ir.logic.propositional;
-this path was never public API and is removed in alpha 0. Update imports to
-`gaia.engine.ir.logic.propositional`.
+
+So the finder only intercepts **strict-prefix** submodule imports (`import gaia.engine.logic.propositional`). It does **not** intercept the bare namespace import (`import gaia.engine.logic`) because `fullname == "gaia.engine.logic"` does not pass `startswith("gaia.engine.logic.")`.
+
+The way alpha-0 covers all three import forms is by also keeping the old directory's `__init__.py` as a 4-line shim that installs a module-level `__getattr__`:
+
+```python
+# gaia/bp/__init__.py — alpha-0 reference shim
+"""Alpha 0 tombstone — gaia.bp relocated to gaia.engine.bp."""
+
+from gaia._legacy_imports import _tombstoned_namespace_getattr
+
+__getattr__ = _tombstoned_namespace_getattr("gaia.bp", "gaia.engine.bp")
 ```
 
-The `tests/baseline/test_l2_tombstones.py` enforces that every entry in `TOMBSTONED_NAMESPACES` actually raises an `ImportError` with the right redirect.
+With both pieces in place, the three import forms are all covered:
 
-For PR a, two new entries added and one updated (see §8.1). For PR b, one new entry added.
+| Import form | Mechanism | Result |
+|---|---|---|
+| `from gaia.engine.logic import X` | shim `__getattr__("X")` | `ImportError(... has moved to gaia.engine.ir.logic ...)` |
+| `import gaia.engine.logic.propositional` | `_TombstonedSubmoduleFinder.find_spec` matches prefix | `ImportError(... has moved to gaia.engine.ir.logic.propositional ...)` |
+| `import gaia.engine.logic` (exact) | resolves to the shim module (which is empty except for `__getattr__`) — subsequent attribute access raises | `ImportError` on first attribute access |
 
-The `verbs/ → dsl/` rename inside `bayes/` does not need a separate tombstone because `engine.lang.bayes.verbs` only ever existed as an internal sub-package; the public API was always `engine.lang.bayes.<verb>` re-exported. Test that public verbs (`from gaia.engine.bayes import model, likelihood`) still resolve; internal `bayes.dsl/__init__.py` re-exports the same names.
+This is why §8.1 / §8.2 keep the old directories and **replace** their `__init__.py` with shim contents rather than deleting the directories.
+
+For PR a: two new tombstone shims (`engine/lang/types/`, `engine/logic/`); two new `TOMBSTONED_NAMESPACES` entries (`gaia.engine.lang.types`, `gaia.engine.logic`); one existing entry updated (`gaia.logic` retargeted to `gaia.engine.ir.logic`).
+
+For PR b: one new tombstone shim (`engine/lang/bayes/`); one new `TOMBSTONED_NAMESPACES` entry (`gaia.engine.lang.bayes`).
+
+The `verbs/ → dsl/` rename inside `bayes/` does not need a separate tombstone because `engine.lang.bayes.verbs` only ever existed as an internal sub-package; the public API was always `engine.lang.bayes.<verb>` re-exported. Internal `bayes.dsl/__init__.py` re-exports the same names (`model`, `likelihood`).
+
+`tests/baseline/test_l2_tombstones.py` enforces that every entry in `TOMBSTONED_NAMESPACES` actually raises an `ImportError` with the right redirect; it must be extended to cover the new entries (or, if it auto-discovers from the registry, will pick them up automatically — confirm during PR a implementation).
 
 ## 10. Test Plan
 
@@ -390,7 +481,7 @@ Existing test suites must continue to pass without changes:
 
 ### PR b tests
 
-Smoke imports:
+Smoke imports — new canonical paths:
 
 ```python
 from gaia.engine.bayes import model, likelihood                       # new public path
@@ -402,17 +493,47 @@ from gaia.engine.bayes.runtime.actions import BayesInference
 assert issubclass(BayesInference, Reasoning)                           # cross-module subclass
 ```
 
+Smoke imports — surviving `lang → bayes` reverse-import sites (per §6.2 these continue to work after PR b updates the path):
+
+```python
+# 1. Lazy submodule attribute on lang/__init__.py
+from gaia.engine.lang import bayes
+assert bayes.__name__ == "gaia.engine.bayes"          # path migrated
+
+# 2. Top-level Distribution factories — proxy to the new bayes.distributions
+from gaia.engine.lang.runtime.distribution import Normal, Beta, Binomial
+n = Normal(mu=0.0, sigma=1.0)
+b = Beta(alpha=1.0, beta=1.0)
+bn = Binomial(n=10, p=0.5)
+# accessing them must not raise; their backing classes resolve from gaia.engine.bayes.distributions
+
+# 3. _lower_bayes_actions code path — exercise via end-to-end compile
+from gaia.engine.lang.runtime.package import CollectedPackage
+from gaia.engine.lang import claim, bayes as bayes_module
+from gaia.engine.lang.compiler import compile_package_artifact
+
+with CollectedPackage("smoke_bayes") as pkg:
+    h = claim("Hypothesis.", prior=0.5)
+    obs = ...  # build a tiny bayes.model + bayes.likelihood
+artifact = compile_package_artifact(pkg)
+# compile must complete without ImportError on the lang→bayes hook path
+```
+
 Tombstone redirect:
 
 ```python
 with pytest.raises(ImportError, match="moved to gaia.engine.bayes"):
     from gaia.engine.lang.bayes import model
+
+with pytest.raises(ImportError, match="moved to gaia.engine.bayes"):
+    import gaia.engine.lang.bayes.compiler
 ```
 
 Existing test suites must pass without semantic regressions:
 
 - `tests/gaia/lang/bayes/*` — Bayes runtime + verbs + lowering tests (paths updated as part of PR b)
 - `tests/gaia/lang/test_action_hierarchy.py::test_bayes_action_shapes_follow_reasoning_taxonomy` — verifies `BayesInference / PredictiveModel / Likelihood` subclass relations across module boundaries
+- `tests/baseline/test_l2_facade.py` — facade contract; `EXPECTED` must include the new `gaia.engine.bayes` entry and the total updated
 
 ### Cross-PR test
 
@@ -420,24 +541,61 @@ IR hash stability: compile a sample Gaia package (e.g., one of the existing `*-g
 
 ## 11. Doc Updates
 
-PR a:
+### PR a
+
+User / foundations docs:
 
 - update `docs/foundations/gaia-lang/predicate-logic.md` — fix any direct references to `gaia.engine.lang.types` import paths
 - update `docs/foundations/gaia-lang/knowledge-and-reasoning.md` — fix any references to `engine.logic.propositional`
 - new `gaia/engine/ir/logic/__init__.py` docstring per §8.1
 
-PR b:
+Reference / facade docs (engine reference layer):
 
-- update `docs/specs/2026-05-15-causal-cleanup-reasoning-shapes.md` §4.2 — replace `gaia.engine.lang.bayes.runtime` references with `gaia.engine.bayes.runtime`; add a host/extension paragraph per §6 of this spec
-- update `docs/foundations/gaia-lang/bayes.md` — update import examples
+- update `docs/reference/engine/index.md` — facade table (the canonical 7-submodule list that locks the engine surface): remove `gaia.engine.logic` from the top-level list; the demoted `engine.ir.logic` lives under the existing `gaia.engine.ir` reference page
+- delete or redirect `docs/reference/engine/logic.md` — its content moves to a sub-section under `docs/reference/engine/ir.md` (or a new `docs/reference/engine/ir/logic.md` if the per-page convention prefers a separate page)
+- update `docs/reference/engine/ir.md` (or `lang/formula.md` / `lang/types.md`) — note that `Bool / Nat / Real / Probability / PrimitiveType` now canonically live at `gaia.engine.lang.formula.primitives`
+
+Facade contract test:
+
+- update `tests/baseline/test_l2_facade.py` — the `EXPECTED` dict is currently:
+  ```python
+  EXPECTED = {
+      "gaia.engine.bp": 17,
+      "gaia.engine.ir": 32,
+      "gaia.engine.lang": 127,
+      "gaia.engine.logic": 7,         # ← remove (logic demoted under ir)
+      "gaia.engine.inquiry": 45,
+      "gaia.engine.trace": 7,
+      "gaia.engine.packaging": 9,
+  }
+  ```
+  Decide whether the 7 logic symbols are re-exported from `gaia.engine.ir` (so `gaia.engine.ir`'s count rises from 32 to ~39) or made internal-only under `gaia.engine.ir.logic` (so the `gaia.engine.ir` `__all__` is unchanged and the 7 symbols disappear from the locked facade total). This is a small but explicit policy decision the implementing PR has to make; update `tests/baseline/test_l2_facade.py` and the docstring in `engine-facade-final.md` accordingly.
+
+### PR b
+
+User / foundations docs:
+
+- update `docs/specs/2026-05-15-causal-cleanup-reasoning-shapes.md` §4.2 — replace `gaia.engine.lang.bayes.runtime` references with `gaia.engine.bayes.runtime`; add a paragraph cross-referencing §6 of this spec for the runtime-class vs module-import distinction
+- update `docs/foundations/gaia-lang/bayes.md` — update import examples to `from gaia.engine.bayes import ...`
 - update `docs/foundations/gaia-lang/knowledge-and-reasoning.md` §6 (Bayes Module) — update path references
 - update `docs/for-users/language-reference.md` import-block example — update Bayes import
 - update `README.md` — update any Bayes-related import snippets
 - move `gaia/engine/lang/bayes/README.md` → `gaia/engine/bayes/README.md`; update its import examples
+- decide whether to keep `from gaia.engine.lang import bayes` documented (recommended: keep, with a doc note that `gaia.engine.bayes` is the canonical path and `gaia.engine.lang.bayes` is a documented compatibility shortcut backed by `lang/__init__.py:__getattr__`)
 
-Both PRs:
+Reference / facade docs:
 
-- a paragraph in `docs/foundations/gaia-lang/package.md` (or a new `engine-architecture.md`) framing host vs extension per §6 of this spec, so future contributors reading the layout know why `lang/` and `bayes/` are not peers despite sitting at the same nesting depth
+- new `docs/reference/engine/bayes.md` (or `bayes/index.md` if the existing convention prefers package-style with sub-pages mirroring `docs/reference/engine/lang/*.md`) — Bayes facade reference page
+- update `docs/reference/engine/index.md` — facade table: add `gaia.engine.bayes` row
+- update `docs/reference/engine/lang/*.md` if any sub-page references `engine.lang.bayes` directly
+
+Facade contract test:
+
+- update `tests/baseline/test_l2_facade.py` — add `gaia.engine.bayes` to `EXPECTED` with its `__all__` count; total 244 will change; sync the docstring header counts
+
+### Both PRs
+
+- a paragraph in `docs/foundations/gaia-lang/package.md` (or a new `engine-architecture.md`) framing the runtime-class / module-import two-layer distinction per §6 of this spec, so future contributors reading the layout know why `lang/` is the host on the runtime-class layer but still imports back from `bayes/` on the module layer.
 
 ## 12. Validation
 
@@ -455,7 +613,7 @@ uv run --extra docs mkdocs build --strict
 Smoke compile on a known package:
 
 ```bash
-gaia compile <some-existing-package>
+gaia build compile <some-existing-package>
 gaia build check <some-existing-package>
 diff <package>/.gaia/ir.json <reference-ir.json>
 ```
@@ -464,9 +622,11 @@ diff <package>/.gaia/ir.json <reference-ir.json>
 
 Tracked separately, not part of this spec:
 
+- **Lang/Bayes import isolation** — design a plugin/registry hook so `lang.compiler` does not directly import `bayes.compiler` (replacing today's `_lower_bayes_actions` direct import with a registered hook); decide whether `from gaia.engine.lang import bayes` stays as a documented compatibility shortcut or is tombstoned in favor of `from gaia.engine.bayes import ...`; decide where the top-level `Normal / LogNormal / Beta / Exponential / Gamma / StudentT / Cauchy / ChiSquared / Binomial / Poisson` distribution factories live (under `lang.runtime.distribution` as today, or relocated to `bayes.runtime.distribution`, or split between user-facing wrappers in `lang` and implementations in `bayes`). Independent of the path migration in this spec; landing requires its own design spec because it touches public API surface.
+
 - **First-order / SMT logic backends** — implement `engine.ir.logic.predicate` (Z3-backed) consuming `formula_atom` metadata for scope A and C analysis (§5.1). Promote `engine.ir.logic/` to top-level `engine.logic/` only if a unified `Theory` data model emerges (Gaia-native abstractions over multiple solvers).
 
-- **Causal extension module** — when the `CausalEdge` GaiaGraph record from `2026-05-15-causal-cleanup-reasoning-shapes.md` §6 is implemented, land it as `gaia.engine.causal/` per the precedent in §6 of this spec.
+- **Causal extension module** — when the `CausalEdge` GaiaGraph record from `2026-05-15-causal-cleanup-reasoning-shapes.md` §6 is implemented, land it as `gaia.engine.causal/` per the precedent in §6 of this spec. Per §6.5, decide explicitly whether `lang/` will reverse-import any causal-specific service (mirroring today's `lang → bayes` reality) or whether the new extension is fully decoupled from day one.
 
 - **Compose review consolidation** — `engine.lang.review/` (manifest gen), `engine.inquiry/` (consume manifest), `engine.trace/review.py` (post-execution review) all carry "review" but operate at different lifecycle stages. Worth a separate spec to clarify whether these should consolidate, rename, or stay split.
 
