@@ -1,27 +1,37 @@
 # gaia.engine.bayes
 
-`gaia.engine.bayes` provides the lifted Bayes authoring surface:
+`gaia.engine.bayes` provides the unified Bayes authoring surface:
 
-- distribution literals backed by `scipy.stats`
-- `model(...)` for one-hypothesis predictive-model helpers
-- `data(...)` for observed values consumable by likelihood lowering
-- `likelihood(...)` for model-preference helpers and IR `infer` lowering
+- `predict(hypothesis, target=..., distribution=...)` — declare a
+  predictive distribution for one hypothesis.
+- `compare(data, models=[...])` — compare equal-positioned predictive
+  models against observation data.
+- `PrecomputedLikelihoods` — audit-bearing Claim subclass for plugging
+  external-solver output (PyMC / Stan / NumPyro / scipy quadrature /
+  custom MCMC) into `compare(precomputed=...)`.
 
-The module intentionally keeps distribution recipes as typed values rather than
-Knowledge nodes. `PredictiveModel` and `Likelihood` are `BayesInference`
-reasoning records whose helper claims compile through the existing IR schema,
-operators, and BP factor types.
+Predictive distributions are :class:`Distribution` Knowledge objects
+created through :mod:`gaia.engine.lang` factories (``Normal``,
+``Binomial``, ``BetaBinomial``, ...). The pydantic ``_BaseDistribution``
+implementations in this subpackage's ``distributions/`` directory are
+internal scipy-backend details — authors should not import them
+directly.
 
-Use the namespace form in packages:
+Use the namespace import:
 
 ```python
 import gaia.engine.bayes as bayes
+from gaia.engine.lang import Binomial, BetaBinomial, observe
 
-model_a = bayes.model(h_a, observable=x, distribution=bayes.Normal(mu=mu, sigma=1.0))
-model_b = bayes.model(h_b, observable=x, distribution=bayes.Normal(mu=mu, sigma=1.0))
-data = bayes.data(x, value=3.0, error=0.2)
-comparison = bayes.likelihood(data, model=model_a, against=[model_b])
+data = observe(k, value=295)
+mendel_pred = bayes.predict(h_a, target=k,
+                            distribution=Binomial("k under A", n=395, p=0.75))
+diffuse_pred = bayes.predict(h_b, target=k,
+                             distribution=BetaBinomial("k under B", n=395, alpha=1, beta=1))
+comparison = bayes.compare(data, models=[mendel_pred, diffuse_pred])
 ```
 
-See `docs/foundations/gaia-lang/bayes.md` for the executable Mendel example and
-the lowering contract.
+See `docs/foundations/gaia-lang/bayes.md` for the tutorial,
+`docs/specs/2026-05-17-bayes-unified-design.md` for the design, and
+`scripts/demo_v06_pymc_integration.py` for an end-to-end PyMC
+integration example.

@@ -76,28 +76,38 @@ def test_gaia_lang_does_not_export_marker_only_causal_surface():
     assert not hasattr(lang.ClaimKind, "CAUSAL")
 
 
-def test_bayes_surface_exposes_v05_and_v06_authoring_verbs():
-    """v0.6 PoC: legacy ``bayes.model`` coexists with the new ``bayes.predict``.
+def test_bayes_surface_exposes_predict_and_compare_verbs():
+    """The unified v0.5 Bayes surface is ``predict`` + ``compare`` + ``PrecomputedLikelihoods``.
 
-    The Milestone-A test originally asserted that ``bayes.predict`` was
-    *not* present (the v0.5 design picked ``bayes.model`` as the verb name
-    deliberately). The v0.6 unified-bayes redesign (see
-    ``docs/specs/2026-05-17-bayes-unified-design.md``) introduces
-    ``predict`` and ``compare`` as the canonical surface; the legacy
-    ``model`` / ``likelihood`` verbs stay importable through one release
-    so existing packages keep compiling. This assertion captures both:
-    legacy names are still reachable, new names are wired up.
+    The earlier in-flight alpha exposed ``bayes.model`` / ``bayes.likelihood``
+    / ``bayes.data`` plus typed-value ``bayes.Normal`` / ``bayes.Binomial``
+    distribution aliases. The clean break (see
+    ``docs/specs/2026-05-17-bayes-unified-design.md``) replaces all of
+    that with three names. This pin captures both the positive surface
+    and the absence of the legacy names.
     """
     import gaia.engine.bayes as bayes
 
-    assert hasattr(bayes, "model")
     assert hasattr(bayes, "predict")
-    assert hasattr(bayes, "likelihood")
     assert hasattr(bayes, "compare")
-    assert "model" in bayes.__all__
+    assert hasattr(bayes, "PrecomputedLikelihoods")
     assert "predict" in bayes.__all__
-    assert "likelihood" in bayes.__all__
     assert "compare" in bayes.__all__
+    assert "PrecomputedLikelihoods" in bayes.__all__
+
+    # Legacy verbs are gone — no compatibility shim.
+    for removed in ("model", "likelihood", "data"):
+        assert not hasattr(bayes, removed), (
+            f"gaia.engine.bayes.{removed} should be gone; "
+            "use predict / compare / observe instead"
+        )
+
+    # Typed-value distribution re-exports are gone — use gaia.engine.lang.
+    for removed in ("Normal", "Binomial", "BetaBinomial", "Beta", "Poisson"):
+        assert not hasattr(bayes, removed), (
+            f"gaia.engine.bayes.{removed} should be gone; "
+            f"import gaia.engine.lang.{removed} instead"
+        )
 
 
 def test_gaia_lang_import_does_not_eagerly_import_bayes():
@@ -107,7 +117,7 @@ def test_gaia_lang_import_does_not_eagerly_import_bayes():
         "print('gaia.engine.bayes' in sys.modules)\n"
         "print('scipy' in sys.modules)\n"
         "import gaia.engine.bayes as bayes\n"
-        "print(hasattr(bayes, 'model'))\n"
+        "print(hasattr(bayes, 'predict'))\n"
     )
     result = subprocess.run(
         [sys.executable, "-c", code],

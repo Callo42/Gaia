@@ -1,78 +1,42 @@
-"""gaia.engine.bayes — hypothesis-data inference helpers.
+"""gaia.engine.bayes — hypothesis-data inference verbs.
 
-The v0.6 unified surface lives at the top of this namespace:
+The user-facing surface is three verbs plus one Claim subclass:
 
 * :func:`predict` — declare a predictive distribution for one hypothesis.
 * :func:`compare` — compare equal-positioned predictive models against data.
 * :class:`PrecomputedLikelihoods` — audit-bearing return type for
-  external-solver wrappers (PyMC / Stan / ...).
+  external-solver wrappers (PyMC / Stan / NumPyro / ...). Always pair
+  with the standard :func:`gaia.engine.lang.compute` decorator to
+  record the wrapper's ``fn`` / ``code_hash`` provenance.
 
-These verbs consume :class:`gaia.engine.lang.runtime.distribution.Distribution`
-Knowledge objects (created via ``Normal``, ``Binomial``, ``BetaBinomial``,
-etc. from ``gaia.engine.lang``). They sit alongside the legacy
-``bayes.model`` / ``bayes.likelihood`` / ``bayes.data`` verbs from v0.5
-and produce distinct Action types (:class:`Prediction` /
-:class:`ModelComparison`) that the v0.6 lowering recognises.
+Distributions live at :mod:`gaia.engine.lang` (the same factories that
+back the quantity-with-predicate surface). The pydantic
+``_BaseDistribution`` types at :mod:`gaia.engine.bayes.distributions` are
+internal scipy-backend implementations — they are not part of the
+authoring surface.
 
-The typed-value distribution aliases (``bayes.Normal``, ``bayes.Binomial``,
-...) remain importable for v0.5 callers but are not part of the v0.6
-authoring surface; new code should import distributions from
-``gaia.engine.lang``.
+See ``docs/specs/2026-05-17-bayes-unified-design.md`` for the design,
+``docs/foundations/gaia-lang/bayes.md`` for the user-facing tutorial,
+and ``scripts/demo_v06_pymc_integration.py`` for an end-to-end PyMC
+integration demo.
 """
 
 from __future__ import annotations
 
 from gaia.engine.bayes.compiler import register_bayes_lowerer as _register_bayes_lowerer
-from gaia.engine.bayes.distributions import (
-    Beta,
-    BetaBinomial,
-    Binomial,
-    Cauchy,
-    ChiSquared,
-    DistParam,
-    Distribution,
-    Exponential,
-    Gamma,
-    LogNormal,
-    Normal,
-    Poisson,
-    StudentT,
-    UnresolvedParameterError,
-)
 from gaia.engine.bayes.dsl.compare import compare
-from gaia.engine.bayes.dsl.data import data
-from gaia.engine.bayes.dsl.likelihood import likelihood
-from gaia.engine.bayes.dsl.model import model
 from gaia.engine.bayes.dsl.predict import predict
 from gaia.engine.bayes.runtime import (
     BayesInference,
-    Likelihood,
     ModelComparison,
     PrecomputedLikelihoods,
     Prediction,
-    PredictiveModel,
 )
 from gaia.engine.lang.runtime.action import Action
 from gaia.engine.lang.runtime.roles import RoleAdder, register_role_handler
 
 
 def _register_bayes_roles() -> None:
-    def predictive_model_roles(action: Action, add: RoleAdder) -> None:
-        if not isinstance(action, PredictiveModel):
-            return
-        add(action.hypothesis, "hypothesis")
-        add(action.helper, "model_helper")
-
-    def likelihood_roles(action: Action, add: RoleAdder) -> None:
-        if not isinstance(action, Likelihood):
-            return
-        add(action.model, "compared_model")
-        for alternative in action.against:
-            add(alternative, "compared_alternative")
-        for data_claim in action.data:
-            add(data_claim, "likelihood_data")
-        add(action.helper, "model_preference_helper")
-
     def prediction_roles(action: Action, add: RoleAdder) -> None:
         if not isinstance(action, Prediction):
             return
@@ -88,8 +52,6 @@ def _register_bayes_roles() -> None:
             add(data_claim, "likelihood_data")
         add(action.helper, "model_preference_helper")
 
-    register_role_handler(PredictiveModel, predictive_model_roles)
-    register_role_handler(Likelihood, likelihood_roles)
     register_role_handler(Prediction, prediction_roles)
     register_role_handler(ModelComparison, model_comparison_roles)
 
@@ -100,28 +62,9 @@ _register_bayes_lowerer()
 
 __all__ = [
     "BayesInference",
-    "Beta",
-    "BetaBinomial",
-    "Binomial",
-    "Cauchy",
-    "ChiSquared",
-    "DistParam",
-    "Distribution",
-    "Exponential",
-    "Gamma",
-    "Likelihood",
-    "LogNormal",
     "ModelComparison",
-    "Normal",
-    "Poisson",
     "PrecomputedLikelihoods",
     "Prediction",
-    "PredictiveModel",
-    "StudentT",
-    "UnresolvedParameterError",
     "compare",
-    "data",
-    "likelihood",
-    "model",
     "predict",
 ]

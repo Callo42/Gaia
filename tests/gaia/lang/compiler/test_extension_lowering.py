@@ -10,21 +10,21 @@ from pathlib import Path
 import pytest
 
 import gaia.engine.bayes as bayes
-from gaia.engine.lang import Nat, Probability, Variable, parameter
+from gaia.engine.lang import Binomial, Nat, Probability, Variable, parameter
 from gaia.engine.lang.compiler.compile import compile_package_artifact
 from gaia.engine.lang.runtime.package import CollectedPackage
 
 
 def _build_minimal_bayes_package(name: str) -> CollectedPackage:
-    """Construct a CollectedPackage containing one Bayes model action."""
+    """Construct a CollectedPackage containing one Bayes prediction action."""
     with CollectedPackage(name=name, namespace="t") as pkg:
         theta = Variable(symbol="theta", domain=Probability)
         k = Variable(symbol="k", domain=Nat)
         hypothesis = parameter(theta, 0.75, content="theta = 0.75.", prior=0.5, label="h")
-        bayes.model(
+        bayes.predict(
             hypothesis,
-            observable=k,
-            distribution=bayes.Binomial(n=10, p=theta),
+            target=k,
+            distribution=Binomial("k under h", n=10, p=theta),
             label="theta_model",
         )
     return pkg
@@ -104,10 +104,10 @@ def test_bayes_actions_compile_through_registered_extension() -> None:
         theta = Variable(symbol="theta", domain=Probability)
         k = Variable(symbol="k", domain=Nat)
         hypothesis = parameter(theta, 0.75, content="theta = 0.75.", prior=0.5, label="h")
-        model_helper = bayes.model(
+        model_helper = bayes.predict(
             hypothesis,
-            observable=k,
-            distribution=bayes.Binomial(n=10, p=theta),
+            target=k,
+            distribution=Binomial("k under h", n=10, p=theta),
             label="theta_model",
         )
 
@@ -117,7 +117,7 @@ def test_bayes_actions_compile_through_registered_extension() -> None:
         knowledge for knowledge in compiled.graph.knowledges if knowledge.id == helper_id
     )
 
-    assert helper_ir.metadata["bayes"]["role"] == "prediction"
+    assert helper_ir.metadata["prediction"]["kind"] == "prediction"
     assert compiled.action_label_map["t:extension_bayes_pkg::action::theta_model"] == helper_id
 
 

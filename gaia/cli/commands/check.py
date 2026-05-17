@@ -324,15 +324,40 @@ def _node_name(node: dict[str, Any] | None, fallback: str | None = None) -> str:
     return str(node.get("label") or node.get("id") or fallback or "<unknown>")
 
 
-def _bayes_metadata(node: dict[str, Any]) -> dict[str, Any]:
+def _prediction_metadata(node: dict[str, Any]) -> dict[str, Any]:
+    """Return the ``metadata["prediction"]`` payload (empty dict if absent)."""
     metadata = node.get("metadata") or {}
-    bayes = metadata.get("bayes") or {}
-    return bayes if isinstance(bayes, dict) else {}
+    prediction = metadata.get("prediction") or {}
+    return prediction if isinstance(prediction, dict) else {}
+
+
+def _comparison_metadata(node: dict[str, Any]) -> dict[str, Any]:
+    """Return the ``metadata["comparison"]`` payload (empty dict if absent)."""
+    metadata = node.get("metadata") or {}
+    comparison = metadata.get("comparison") or {}
+    return comparison if isinstance(comparison, dict) else {}
 
 
 def _bayes_role(node: dict[str, Any]) -> str | None:
-    role = _bayes_metadata(node).get("role")
-    return role if isinstance(role, str) else None
+    """Detect a Bayes role on a knowledge node via the unified metadata schema.
+
+    ``metadata["prediction"]["kind"] == "prediction"`` is the marker written
+    by :func:`gaia.engine.bayes.predict`; ``metadata["comparison"]["kind"]
+    == "comparison"`` is the marker written by
+    :func:`gaia.engine.bayes.compare`.
+    """
+    if _prediction_metadata(node).get("kind") == "prediction":
+        return "prediction"
+    if _comparison_metadata(node).get("kind") == "comparison":
+        return "comparison"
+    return None
+
+
+def _observation_metadata(node: dict[str, Any]) -> dict[str, Any]:
+    """Return the ``metadata["observation"]`` payload (empty dict if absent)."""
+    metadata = node.get("metadata") or {}
+    observation = metadata.get("observation") or {}
+    return observation if isinstance(observation, dict) else {}
 
 
 def _is_local_ir_id(ir: dict[str, Any], qid: str) -> bool:
@@ -341,19 +366,6 @@ def _is_local_ir_id(ir: dict[str, Any], qid: str) -> bool:
     if not isinstance(namespace, str) or not isinstance(package_name, str):
         return True
     return qid.startswith(f"{namespace}:{package_name}::")
-
-
-def _formula_binding_symbols(node: dict[str, Any]) -> set[str]:
-    metadata = node.get("metadata") or {}
-    bindings = metadata.get("formula_bindings") or []
-    symbols: set[str] = set()
-    for binding in bindings:
-        if not isinstance(binding, dict):
-            continue
-        symbol = binding.get("symbol")
-        if isinstance(symbol, str) and "value" in binding:
-            symbols.add(symbol)
-    return symbols
 
 
 def _hypothesis_prior(node: dict[str, Any] | None) -> float:
@@ -374,39 +386,45 @@ def _hypothesis_prior(node: dict[str, Any] | None) -> float:
 
 
 def _bayes_referenced_models(comparisons: dict[str, dict[str, Any]]) -> set[str]:
-    """Return model ids referenced by Bayes likelihood comparisons.
+    """Return prediction-helper ids referenced by ``compare()`` calls.
 
-    Walks both v0.5 ``metadata["bayes"]`` (``model`` + ``against=[...]``)
-    and v0.6 ``metadata["comparison"]`` (``models=[...]`` equal-positioned
-    list). A package that mixes both surfaces during migration will have
-    its prediction helpers reachable through either namespace.
+    Reads the unified ``metadata["comparison"]["models"]`` list written by
+    :func:`gaia.engine.bayes.compare`.
     """
     referenced: set[str] = set()
     for comparison in comparisons.values():
-        metadata = comparison.get("metadata") or {}
-
-        # v0.5: bayes.model= + bayes.against=[...]
-        bayes_meta = metadata.get("bayes") or {}
-        if isinstance(bayes_meta, dict):
-            model = bayes_meta.get("model")
-            if isinstance(model, str):
-                referenced.add(model)
-            against = bayes_meta.get("against")
-            if isinstance(against, list):
-                referenced.update(m for m in against if isinstance(m, str))
-
-        # v0.6: comparison.models=[...]
-        comparison_meta = metadata.get("comparison") or {}
-        if isinstance(comparison_meta, dict):
-            models = comparison_meta.get("models")
-            if isinstance(models, list):
-                referenced.update(m for m in models if isinstance(m, str))
+        models = _comparison_metadata(comparison).get("models")
+        if isinstance(models, list):
+            referenced.update(m for m in models if isinstance(m, str))
     return referenced
 
 
-def _bayes_observed_symbols(nodes: dict[str, dict[str, Any]]) -> set[str]:
-    """Return formula symbols with bound observation values."""
-    return {symbol for node in nodes.values() for symbol in _formula_binding_symbols(node)}
+def _bayes_observed_targets(nodes: dict[str, dict[str, Any]]) -> set[str]:
+    """Return Variable symbols (and Distribution labels) of observed targets.
+
+    The unified ``observe(...)`` schema stores the target descriptor at
+    ``metadata["observation"]["target"]``. For a Variable target this is
+    ``{"kind": "variable", "symbol": ..., "domain": ...}``; for a
+    Distribution target it is ``{"kind": "distribution", "label": ...,
+    "family": ...}``. We index both forms by their human-facing
+    identifier so the prediction-target check can verify each prediction
+    has a corresponding observe(...).
+    """
+    symbols: set[str] = set()
+    for node in nodes.values():
+        observation = _observation_metadata(node)
+        target = observation.get("target")
+        if not isinstance(target, dict):
+            continue
+        if target.get("kind") == "variable":
+            symbol = target.get("symbol")
+            if isinstance(symbol, str):
+                symbols.add(symbol)
+        elif target.get("kind") == "distribution":
+            label = target.get("label")
+            if isinstance(label, str):
+                symbols.add(label)
+    return symbols
 
 
 def _check_bayes_prediction(
@@ -415,7 +433,7 @@ def _check_bayes_prediction(
     prediction_id: str,
     prediction: dict[str, Any],
     referenced_models: set[str],
-    observed_symbols: set[str],
+    observed_targets: set[str],
     diagnostics: _BayesCheckDiagnostics,
 ) -> None:
     """Append diagnostics for one Bayes prediction node."""
@@ -423,81 +441,119 @@ def _check_bayes_prediction(
     if _is_local_ir_id(ir, prediction_id) and prediction_id not in referenced_models:
         diagnostics.warnings.append(
             "bayes:dangling-prediction: "
-            f"PredictiveModel {prediction_name} is never referenced by likelihood(). "
-            "Fix: add bayes.likelihood(data, model=model, against=[...]) or remove the "
-            "unused model."
+            f"prediction {prediction_name} is never referenced by compare(). "
+            "Fix: add bayes.compare(data, models=[...]) or remove the "
+            "unused prediction."
         )
 
-    observable = _bayes_metadata(prediction).get("observable") or {}
-    symbol = observable.get("symbol") if isinstance(observable, dict) else None
+    target = _prediction_metadata(prediction).get("target") or {}
+    identifier: str | None = None
+    if isinstance(target, dict):
+        if target.get("kind") == "variable":
+            identifier = target.get("symbol") if isinstance(target.get("symbol"), str) else None
+        elif target.get("kind") == "distribution":
+            identifier = target.get("label") if isinstance(target.get("label"), str) else None
     if (
         _is_local_ir_id(ir, prediction_id)
-        and isinstance(symbol, str)
-        and symbol not in observed_symbols
+        and isinstance(identifier, str)
+        and identifier not in observed_targets
     ):
         diagnostics.warnings.append(
             "bayes:unobserved-prediction-target: "
-            f"PredictiveModel {prediction_name} observable {symbol!r} has no "
-            "matching observed formula claim. Fix: use bayes.data(observable, value=...), "
-            "or declare a claim whose formula binds that Variable and mark it with "
-            "observe(...)."
+            f"prediction {prediction_name} target {identifier!r} has no "
+            "matching observe(...) call. Fix: add observe(target, value=...) "
+            "for the measured Variable or Distribution, or remove the unused prediction."
         )
 
 
 def _check_bayes_comparison_data(
     *,
     comparison_name: str,
-    bayes: dict[str, Any],
-    model_bayes: dict[str, Any],
+    comparison: dict[str, Any],
+    model_prediction: dict[str, Any],
     nodes: dict[str, dict[str, Any]],
     diagnostics: _BayesCheckDiagnostics,
 ) -> None:
-    """Append missing-data diagnostics for a Bayes likelihood comparison."""
-    observable = model_bayes.get("observable") or {}
-    observable_symbol = observable.get("symbol") if isinstance(observable, dict) else None
-    for data_id in bayes.get("data") or []:
+    """Append missing-data diagnostics for a ``compare()`` call.
+
+    Reads the unified ``metadata["comparison"]["data"]`` list and verifies
+    each referenced Claim carries a ``metadata["observation"]`` payload
+    with at least a ``value`` field. The earlier alpha relied on formula
+    AST bindings; the unified schema stores value and target inline as
+    metadata so the check is a direct dictionary lookup.
+    """
+    target = model_prediction.get("target") or {}
+    expected_identifier: str | None = None
+    if isinstance(target, dict):
+        if target.get("kind") == "variable":
+            expected_identifier = target.get("symbol")
+        elif target.get("kind") == "distribution":
+            expected_identifier = target.get("label")
+    if not isinstance(expected_identifier, str):
+        expected_identifier = None
+
+    for data_id in comparison.get("data") or []:
         if not isinstance(data_id, str):
             continue
         data_node = nodes.get(data_id)
         if data_node is None:
             diagnostics.errors.append(
-                "bayes:likelihood-without-data: "
-                f"likelihood {comparison_name} references missing data {data_id}. "
-                "Fix: pass an observed formula Claim that is compiled with the package."
+                "bayes:comparison-without-data: "
+                f"compare {comparison_name} references missing data {data_id}. "
+                "Fix: pass an observe(target, value=...) Claim that is compiled "
+                "with the package."
             )
             continue
-        binding_symbols = _formula_binding_symbols(data_node)
-        if not binding_symbols or (
-            isinstance(observable_symbol, str) and observable_symbol not in binding_symbols
+        observation = _observation_metadata(data_node)
+        if "value" not in observation:
+            diagnostics.errors.append(
+                "bayes:comparison-without-data: "
+                f"compare {comparison_name} references data {_node_name(data_node)} "
+                "without a metadata['observation'] payload. Fix: use "
+                "observe(target, value=...) so the data Claim carries the unified "
+                "observation schema, or pass precomputed likelihoods with a "
+                "reviewable observation Claim."
+            )
+            continue
+        observed_target = observation.get("target")
+        observed_identifier: str | None = None
+        if isinstance(observed_target, dict):
+            if observed_target.get("kind") == "variable":
+                observed_identifier = observed_target.get("symbol")
+            elif observed_target.get("kind") == "distribution":
+                observed_identifier = observed_target.get("label")
+        if (
+            expected_identifier is not None
+            and isinstance(observed_identifier, str)
+            and observed_identifier != expected_identifier
         ):
             diagnostics.errors.append(
-                "bayes:likelihood-without-data: "
-                f"likelihood {comparison_name} references data {_node_name(data_node)} "
-                f"without a bound value for observable {observable_symbol!r}. "
-                "Fix: use bayes.data(observable, value=...) for the measured Variable, "
-                "or pass precomputed likelihoods with a reviewable observation Claim."
+                "bayes:comparison-without-data: "
+                f"compare {comparison_name} references data {_node_name(data_node)} "
+                f"whose target {observed_identifier!r} does not match the "
+                f"prediction target {expected_identifier!r}. Fix: pass an "
+                "observe(target, value=...) Claim for the prediction's target."
             )
 
 
 def _check_bayes_prior_coherence(
     *,
     comparison_name: str,
-    bayes: dict[str, Any],
-    model_bayes: dict[str, Any],
+    comparison: dict[str, Any],
     nodes: dict[str, dict[str, Any]],
     diagnostics: _BayesCheckDiagnostics,
 ) -> list[str]:
     """Append prior-coherence diagnostics and return hypothesis ids."""
-    hypotheses = bayes.get("hypotheses") or model_bayes.get("hypotheses") or []
+    hypotheses = comparison.get("hypotheses") or []
     hypothesis_ids = [h for h in hypotheses if isinstance(h, str)]
     if not hypothesis_ids:
         return []
     prior_sum = sum(_hypothesis_prior(nodes.get(hypothesis_id)) for hypothesis_id in hypothesis_ids)
-    exclusivity = bayes.get("exclusivity")
+    exclusivity = comparison.get("exclusivity")
     if exclusivity == "pairwise_contradiction" and prior_sum > 1.0 + CROMWELL_EPS:
         diagnostics.errors.append(
             "bayes:hypothesis-prior-coherence: "
-            f"likelihood {comparison_name} uses pairwise_contradiction over "
+            f"compare {comparison_name} uses pairwise_contradiction over "
             f"{len(hypothesis_ids)} hypotheses with prior sum={prior_sum:g}. "
             "Fix: reduce the listed hypothesis priors so their at-most-one mass "
             "does not exceed 1, or choose a different exclusivity mode."
@@ -505,7 +561,7 @@ def _check_bayes_prior_coherence(
     elif exclusivity == "exhaustive_pairwise_complement" and abs(prior_sum - 1.0) > CROMWELL_EPS:
         diagnostics.errors.append(
             "bayes:hypothesis-prior-coherence: "
-            f"likelihood {comparison_name} uses exhaustive_pairwise_complement over "
+            f"compare {comparison_name} uses exhaustive_pairwise_complement over "
             f"{len(hypothesis_ids)} hypotheses with prior sum={prior_sum:g}. "
             "Fix: set the exhaustive alternatives' priors to sum to 1."
         )
@@ -607,24 +663,36 @@ def _diagnostic_key_recognised(key: object) -> bool:
 def _check_bayes_infer_overlap(
     *,
     comparison_name: str,
-    bayes: dict[str, Any],
+    comparison: dict[str, Any],
     hypothesis_ids: list[str],
     strategies: list[dict[str, Any]],
     diagnostics: _BayesCheckDiagnostics,
 ) -> None:
-    """Warn when hand-written infer() overlaps a Bayes likelihood factor."""
+    """Warn when hand-written infer() overlaps a Bayes comparison factor.
+
+    The unified lowering tags its emitted strategies with
+    ``metadata["comparison_factor"]["kind"] == "comparison_factor"``;
+    anything else with ``type == "infer"`` is a hand-written CPT that
+    might collide with the Bayes-emitted factor on the same
+    ``(hypothesis, data)`` pair.
+    """
     for strategy in strategies:
-        strategy_bayes = (strategy.get("metadata") or {}).get("bayes") or {}
-        if strategy_bayes.get("role") == "likelihood_factor" or strategy.get("type") != "infer":
+        strategy_meta = strategy.get("metadata") or {}
+        comparison_factor = strategy_meta.get("comparison_factor") or {}
+        is_bayes_factor = (
+            isinstance(comparison_factor, dict)
+            and comparison_factor.get("kind") == "comparison_factor"
+        )
+        if is_bayes_factor or strategy.get("type") != "infer":
             continue
         premises = set(strategy.get("premises") or [])
         conclusion = strategy.get("conclusion")
-        if premises.intersection(hypothesis_ids) and conclusion in (bayes.get("data") or []):
+        if premises.intersection(hypothesis_ids) and conclusion in (comparison.get("data") or []):
             diagnostics.warnings.append(
-                "bayes:infer-likelihood-overlap: "
-                f"likelihood {comparison_name} overlaps with a low-level infer() "
+                "bayes:infer-comparison-overlap: "
+                f"compare {comparison_name} overlaps with a low-level infer() "
                 "strategy for the same hypothesis/data pair. Fix: keep either "
-                "bayes.likelihood() or the hand-written infer() CPT."
+                "bayes.compare() or the hand-written infer() CPT."
             )
             return
 
@@ -640,7 +708,7 @@ def _bayes_check_diagnostics(ir: dict[str, Any]) -> _BayesCheckDiagnostics:
     }
 
     referenced_models = _bayes_referenced_models(comparisons)
-    observed_symbols = _bayes_observed_symbols(nodes)
+    observed_targets = _bayes_observed_targets(nodes)
 
     _check_v06_precomputed_solver_diagnostics(
         nodes=nodes,
@@ -653,28 +721,31 @@ def _bayes_check_diagnostics(ir: dict[str, Any]) -> _BayesCheckDiagnostics:
             prediction_id=prediction_id,
             prediction=prediction,
             referenced_models=referenced_models,
-            observed_symbols=observed_symbols,
+            observed_targets=observed_targets,
             diagnostics=diagnostics,
         )
 
     for _comparison_id, comparison in comparisons.items():
-        bayes = _bayes_metadata(comparison)
+        comparison_payload = _comparison_metadata(comparison)
         comparison_name = _node_name(comparison)
-        model_id = bayes.get("model")
-        model = nodes.get(model_id) if isinstance(model_id, str) else None
-        model_bayes = _bayes_metadata(model) if model is not None else {}
+        # The compare() lowering emits an equal-positioned ``models`` list;
+        # using the first as the "anchor" for the prediction-target check
+        # is sufficient because compare() validates target identity across
+        # the whole list at construction time.
+        models = comparison_payload.get("models") or []
+        first_model = nodes.get(models[0]) if models and isinstance(models[0], str) else None
+        first_prediction = _prediction_metadata(first_model) if first_model is not None else {}
 
         _check_bayes_comparison_data(
             comparison_name=comparison_name,
-            bayes=bayes,
-            model_bayes=model_bayes,
+            comparison=comparison_payload,
+            model_prediction=first_prediction,
             nodes=nodes,
             diagnostics=diagnostics,
         )
         hypothesis_ids = _check_bayes_prior_coherence(
             comparison_name=comparison_name,
-            bayes=bayes,
-            model_bayes=model_bayes,
+            comparison=comparison_payload,
             nodes=nodes,
             diagnostics=diagnostics,
         )
@@ -682,7 +753,7 @@ def _bayes_check_diagnostics(ir: dict[str, Any]) -> _BayesCheckDiagnostics:
             continue
         _check_bayes_infer_overlap(
             comparison_name=comparison_name,
-            bayes=bayes,
+            comparison=comparison_payload,
             hypothesis_ids=hypothesis_ids,
             strategies=ir.get("strategies", []),
             diagnostics=diagnostics,

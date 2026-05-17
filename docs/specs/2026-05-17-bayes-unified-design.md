@@ -1,21 +1,21 @@
 # Bayes Unified Design — One Distribution, One Observation Schema
 
-> **Status:** Target design (proposal)
+> **Status:** Implemented in v0.5
 > **Branch:** `feat/bayes-unified-design` (off `v0.5`)
-> **Target release:** v0.6 (clean break — old `bayes.model` / `bayes.data` / `bayes.likelihood` surface removed)
+> **Target release:** v0.5 — clean break replacing the earlier in-flight Bayes surface
 > **Date:** 2026-05-17
-> **Scope:** Replace the parallel `gaia.engine.bayes` typed-value distributions plus `bayes.model` / `bayes.data` / `bayes.likelihood` verbs with a single Distribution-Knowledge-centred surface that unifies hypothesis comparison and the quantity-with-predicate surface. Also fix the heterogeneous read paths for predictive mean, observed value, and noise sigma.
+> **Scope:** Replace the parallel `gaia.engine.bayes` typed-value distributions plus the in-flight `bayes.model` / `bayes.data` / `bayes.likelihood` verbs with a single Distribution-Knowledge-centred surface that unifies hypothesis comparison and the quantity-with-predicate surface. Also fix the heterogeneous read paths for predictive mean, observed value, and noise sigma.
 > **Supersedes:**
->   - `docs/specs/2026-05-04-bayes-module-design.md` (PR #523) — kept for historical context, no longer authoritative for v0.6.
+>   - `docs/specs/2026-05-04-bayes-module-design.md` (PR #523) — kept for historical context, no longer authoritative.
 >   - `docs/specs/2026-05-05-bayes-actions-design.md` (PR #530) — kept for historical context; the Action-as-first-class-citizen direction is retained, but the verb names and data flow change.
 > **Depends on:**
->   - v0.5 Lang Distribution Knowledge (`gaia/engine/lang/runtime/distribution.py`)
->   - v0.5 lifted Lang (`Variable`, `Domain`, `parameter`, `observe`)
->   - v0.5 Action hierarchy (`Support` / `Structural` / `Probabilistic` / `Scaffold`)
+>   - Lang Distribution Knowledge (`gaia/engine/lang/runtime/distribution.py`)
+>   - Lifted Lang (`Variable`, `Domain`, `parameter`, `observe`)
+>   - Action hierarchy (`Support` / `Structural` / `Probabilistic` / `Scaffold`)
 
 ---
 
-## 0. Motivation: three concrete design fractures in v0.5
+## 0. Motivation: three concrete design fractures in the earlier surface
 
 ### 0.1 Two parallel Distribution types with the same factory names
 
@@ -238,9 +238,9 @@ def observe(
 
 Behaviour by target:
 
-- `target` is a `Claim` (or `str`) **and** `value` is sentinel: classical discrete claim observation. Pins prior to `1 - CROMWELL_EPS`. Identical to v0.5.
-- `target` is a `Distribution`: continuous-quantity observation; identical to v0.5 path except that it writes the new `metadata["observation"]` schema (§2.2). Replaces v0.5 `metadata["observation"]` shape with the renamed canonical fields.
-- `target` is a `Variable`: **new in v0.6.** Treated as a measurement of the variable. Same schema. This is what fully replaces `bayes.data(...)`.
+- `target` is a `Claim` (or `str`) **and** `value` is sentinel: classical discrete claim observation. Pins prior to `1 - CROMWELL_EPS`.
+- `target` is a `Distribution`: continuous-quantity observation; writes the unified `metadata["observation"]` schema (§2.2).
+- `target` is a `Variable`: measurement of the named random variable. Same schema. Replaces the legacy `bayes.data(...)` path.
 
 `error=σ` (scalar) is sugared into `Normal(mu=0, sigma=σ)` at entry. `error=None` (default) means noise-free observation. `error=Distribution` is passed through.
 
@@ -261,15 +261,15 @@ def compare(
     """Compare observed data against a list of equally-positioned predictive models."""
 ```
 
-Differences from v0.5 `bayes.likelihood`:
+Differences from the legacy `bayes.likelihood` it replaces:
 
 - `model=` + `against=[...]` becomes a single `models=[...]` list. The first-position "advocated" model is no longer privileged — all hypotheses are equal. (Authorial preference is recorded via Claim prior, not API asymmetry.)
-- `precomputed=` accepts either a dict (legacy escape hatch, hypothesis Claim → log L) or a `PrecomputedLikelihoods` Claim (§4).
-- Returns the comparison helper Claim, with `metadata["comparison"]` (renamed from `metadata["bayes"]`) carrying the likelihood table and exclusivity contract.
+- `precomputed=` accepts either a `dict[Claim, float]` (back-of-the-envelope escape hatch) or a `PrecomputedLikelihoods` Claim (§4).
+- Returns the comparison helper Claim, with `metadata["comparison"]` carrying the likelihood table and exclusivity contract.
 
-### 3.4 Renamed Actions
+### 3.4 Action class names
 
-| v0.5 name          | v0.6 name           | Reason                                                              |
+| Legacy name        | Current name        | Reason                                                              |
 |--------------------|---------------------|---------------------------------------------------------------------|
 | `PredictiveModel`  | `Prediction`        | Aligns with verb `predict`; shorter; "predictive model" was overloaded |
 | `Likelihood`       | `ModelComparison`   | Aligns with verb `compare`; `Likelihood` is too generic              |
@@ -295,7 +295,7 @@ class ModelComparison(BayesInference):
     log_likelihoods: dict[Claim, float] = field(default_factory=dict)
 ```
 
-Note `Prediction` carries `target` instead of v0.5's `observable: Variable`. `target` is `Variable | Distribution`, matching `observation.target`.
+Note `Prediction` carries `target` (typed `Variable | Distribution`) instead of the legacy `observable: Variable`, matching `observation.target`.
 
 ---
 
@@ -315,7 +315,7 @@ class PrecomputedLikelihoods(Claim):
     solver: str = ""        # e.g. "pymc-nuts-4000", "stan-hmc", "custom"
 ```
 
-- Keys of `log_likelihoods` are the original hypothesis Claims, matching the v0.5 `precomputed` dict shape.
+- Keys of `log_likelihoods` are the original hypothesis Claims, matching the bare-`dict` shortcut shape.
 - `diagnostics` is solver-specific but follows a recommended schema (see below). It is mirrored into `metadata["diagnostics"]` at construction time so the IR / `gaia build check` / `gaia explain` can introspect it without walking back to the runtime object.
 - `solver` is a free-form label for review and explain output.
 
@@ -472,7 +472,7 @@ def _log_likelihood(prediction: Prediction, data: Claim) -> float:
 
 ### 5.3 Compare → infer factors
 
-Identical to v0.5 lowering shape (one `Strategy(INFER)` per hypothesis with `conditional_probabilities = [0.5, clamp(LR_i)]`). Only the metadata key namespace changes:
+One `Strategy(INFER)` per hypothesis with `conditional_probabilities = [0.5, clamp(LR_i)]`. Metadata key namespace:
 
 ```python
 metadata = {
@@ -491,23 +491,21 @@ Old key `metadata["bayes"]` is gone. Authors and tools that previously read it n
 
 ### 5.4 Structural Actions for exclusivity
 
-Unchanged from v0.5: `Contradict` for `pairwise_contradiction`, `Exclusive` (or `Contradict` + clamped Disjunction operator for ≥3 hypotheses) for `exhaustive_pairwise_complement`. The auto-generated helper Claims and their idempotency check are unchanged.
+Exclusivity emission: `Contradict` for `pairwise_contradiction`, `Exclusive` (or `Contradict` + clamped Disjunction operator for ≥3 hypotheses) for `exhaustive_pairwise_complement`. The auto-generated helper Claims and their idempotency check are unchanged from the legacy lowering.
 
 ---
 
 ## 6. Check rules
 
-Rename the diagnostic codes to match the new schema:
+| Code                                          | Trigger                                                              |
+|-----------------------------------------------|----------------------------------------------------------------------|
+| `bayes:dangling-prediction`                   | Prediction helper never consumed by a `compare()`                    |
+| `bayes:unobserved-prediction-target`          | Prediction target Variable/Distribution has no `observe(...)`         |
+| `bayes:hypothesis-prior-coherence`            | Hypothesis priors don't sum sensibly given exclusivity                |
+| `bayes:comparison-without-data`               | `compare()` got no data Claims                                       |
+| `bayes:infer-comparison-overlap`              | Same hypothesis-evidence pair has both an `infer()` and a `compare()` |
 
-| v0.5                                 | v0.6                                  | Trigger                                                              |
-|--------------------------------------|---------------------------------------|----------------------------------------------------------------------|
-| `bayes:dangling-prediction`          | `bayes:dangling-prediction`           | Prediction helper never consumed by a `compare()`                    |
-| `bayes:unobserved-prediction-target` | `bayes:unobserved-prediction-target`  | Prediction target Variable/Distribution has no `observe(...)`         |
-| `bayes:hypothesis-prior-coherence`   | `bayes:hypothesis-prior-coherence`    | Hypothesis priors don't sum sensibly given exclusivity                |
-| `bayes:likelihood-without-data`      | `bayes:comparison-without-data`       | `compare()` got no data Claims                                       |
-| `bayes:infer-likelihood-overlap`     | `bayes:infer-comparison-overlap`      | Same hypothesis-evidence pair has both an `infer()` and a `compare()` |
-
-Only the last two change. The underlying logic is preserved; the codes are renamed in lock-step with the verb rename.
+All five rules read the unified metadata schema (`metadata["prediction"]`, `metadata["observation"]`, `metadata["comparison"]`). Codes `bayes:comparison-without-data` and `bayes:infer-comparison-overlap` are renamed from the earlier `bayes:likelihood-*` codes in lock-step with the verb rename.
 
 A new rule, implemented in [gaia/cli/commands/check.py](../../gaia/cli/commands/check.py) under `_check_v06_precomputed_solver_diagnostics`:
 
@@ -521,27 +519,29 @@ The rule is intentionally a warning, not an error: deterministic analytical wrap
 
 ## 7. Migration
 
-### 7.1 v0.5 examples that touch Bayes verbs
+v0.5 ships this as a clean break from the earlier in-flight Bayes alpha. The list below tracks the changes already landed in this PR.
 
-- `examples/mendel-v0-5-gaia/src/mendel_v0_5/__init__.py` — quantitative comparison segment. Full rewrite (see §8 below).
-- (No other v0.5 example uses `bayes.*` today; Galileo is purely qualitative.)
+### 7.1 Examples that touched the legacy Bayes verbs
+
+- `examples/mendel-v0-5-gaia/src/mendel_v0_5/__init__.py` — quantitative comparison segment rewritten through `predict / compare / observe(Variable, ...)` (see §8 below).
+- (No other example uses Bayes verbs; Galileo is purely qualitative.)
 
 ### 7.2 Test suite
 
-- `tests/gaia/bayes/test_runtime_and_lowering.py` — full rewrite to the new verb shape.
-- `tests/gaia/bayes/check/test_gaia_check_bayes.py` — code rename, keep behavioural assertions.
-- `tests/gaia/bayes/test_public_surface.py` — adjust expected export list.
-- `tests/gaia/lang/test_observe_continuous.py` — extend to cover `observe(Variable, value=, error=)` path.
-- New: `tests/gaia/bayes/test_numeric_equivalence_v05_v06.py` — golden numeric tests vs v0.5 Mendel posteriors.
+- `tests/gaia/bayes/test_runtime_and_lowering.py` — rewritten to the new verb shape.
+- `tests/gaia/bayes/check/test_gaia_check_bayes.py` — rewritten + renamed codes.
+- `tests/gaia/bayes/test_public_surface.py` — expected export list trimmed to `predict` / `compare` / `PrecomputedLikelihoods`.
+- `tests/gaia/lang/test_observe_continuous.py` — extended to cover the `observe(Variable, value=, error=)` path.
+- `tests/gaia/bayes/test_v06_numeric_equivalence.py` — golden numeric tests (kept under the `v06` filename for git diff readability; the assertion content is "new surface == previous alpha surface").
 
 ### 7.3 Docs
 
-- `docs/foundations/gaia-lang/bayes.md` — rewrite the hypothesis-comparison section. The quantity-with-predicate section is essentially unchanged (the unified `metadata["observation"]` schema makes it cleaner, but author code is identical).
-- `docs/reference/engine/bayes.md` — regenerate from new docstrings.
+- `docs/foundations/gaia-lang/bayes.md` — rewritten end-to-end through the new verbs.
+- `docs/reference/engine/bayes.md` — regenerated from docstrings.
 
 ### 7.4 Breaking changes summary
 
-For users of v0.5:
+For anyone using the in-flight alpha Bayes surface:
 
 ```diff
 -from gaia.engine.bayes import Normal, Binomial, BetaBinomial
@@ -557,13 +557,13 @@ For users of v0.5:
 +cmp = bayes.compare(data, models=[a, b], exclusivity="...")
 ```
 
-There is no compatibility shim. v0.6 fails fast at import time on the removed names.
+There is no compatibility shim. v0.5 fails fast at import time on the removed names.
 
 ---
 
 ## 8. Mendel example, before / after
 
-### 8.1 v0.5 (current)
+### 8.1 Earlier in-flight surface
 
 ```python
 import gaia.engine.bayes as bayes
@@ -589,7 +589,7 @@ mendel_count_likelihood = bayes.likelihood(
 )
 ```
 
-### 8.2 v0.6 (target)
+### 8.2 v0.5 unified surface
 
 ```python
 from gaia.engine.lang import Binomial, BetaBinomial, observe
@@ -642,8 +642,8 @@ Two visible improvements:
 These four points are listed as the spec's authoritative defaults. PR review can flip any of them without rewriting the spec.
 
 1. **`bayes` namespace.** Predict and compare live at `gaia.engine.bayes`, not promoted to `gaia.engine.lang`. Rationale: `derive` / `observe` / `compute` are universal verbs; `predict` / `compare` are statistical, opt-in. (Default: **keep the namespace.**)
-2. **`observed=` inline sugar on Distribution factories.** Not provided in v0.6. Authors must call `observe()` explicitly so the Observe Action is review-visible. (Default: **no sugar.**)
-3. **Noise convolution location.** Lowering-time convolution preserves the v0.5 algorithm. Hierarchical-RV (`y_obs ~ Normal(y_true, σ_meas)`) is deferred to v0.7+ because the BP backend is still discrete. (Default: **lowering-time convolve.**)
+2. **`observed=` inline sugar on Distribution factories.** Not provided. Authors must call `observe()` explicitly so the Observe Action is review-visible. (Default: **no sugar.**)
+3. **Noise convolution location.** Lowering-time convolution. Hierarchical-RV (`y_obs ~ Normal(y_true, σ_meas)`) is deferred to post-v0.5 because the BP backend is still discrete. (Default: **lowering-time convolve.**)
 4. **`compare(models=[...])` symmetry.** Equal-positioned list, no `model=` + `against=[...]` asymmetry. Authorial advocacy lives in Claim prior, not in the API. (Default: **symmetric list.**)
 
 ---
@@ -651,25 +651,24 @@ These four points are listed as the spec's authoritative defaults. PR review can
 ## 10. Acceptance checklist
 
 ```
-[ ] gaia/engine/bayes/__init__.py exposes predict, compare, PrecomputedLikelihoods only
-[ ] gaia/engine/bayes/distributions/ becomes a private implementation directory; no Normal / Binomial / ... exported
+[x] gaia/engine/bayes/__init__.py exposes predict, compare, PrecomputedLikelihoods only
+[x] gaia/engine/bayes/distributions/ becomes a private implementation directory; no Normal / Binomial / ... exported
 [x] gaia/engine/lang exports Normal, Binomial, BetaBinomial, ... (BetaBinomial added)
 [x] observe(Variable, value=..., error=...) writes the unified metadata["observation"] schema
 [x] predict(...) writes the unified metadata["prediction"] schema
-[x] compare(...) writes metadata["comparison"]; old metadata["bayes"] key on helpers (mostly) removed
+[x] compare(...) writes metadata["comparison"]; legacy metadata["bayes"] key on helpers removed
 [x] PrecomputedLikelihoods Claim subclass implemented; compare(precomputed=) accepts it
 [x] @compute decorator resolves PEP-563 string return annotations
 [x] PrecomputedLikelihoods.diagnostics mirrors onto metadata["diagnostics"] for IR introspection
 [x] bayes:precomputed-solver-diagnostics-missing check rule implemented
-[x] _bayes_referenced_models sees v0.6 metadata["comparison"]["models"] for dangling-prediction check
-[ ] Lowering rewrites _observation_value / _log_likelihood / _log_likelihood_with_noise
-    behind a single _dist_param-based reader
+[x] All check rules read v0.5 unified schema (metadata["prediction"] / ["observation"] / ["comparison"])
+[x] Lowering reads value / noise / distribution params through one helper (no formula-AST walk)
 [x] examples/mendel-v0-5-gaia rewritten
-[x] Numeric equivalence test passes (Mendel posterior(h_3_1), odds, comparison belief
-    match v0.5 to within 1e-9)
+[x] Numeric equivalence test passes (Mendel posterior, odds, comparison belief
+    match the legacy alpha surface to within 1e-9)
 [x] External-solver contract validated end-to-end:
       - tests/gaia/bayes/test_v06_external_solver_integration.py (scipy.integrate.quad)
-      - scripts/demo_v06_pymc_integration.py (real PyMC SMC)
-[ ] Documentation regenerated (foundations/gaia-lang/bayes.md, reference/engine/bayes.md)
-[ ] Wrapper pattern §4.4 surfaced in foundations docs
+      - scripts/demo_v06_pymc_integration.py (real PyMC SMC; not in CI, no PyMC dependency)
+[x] Documentation regenerated (foundations/gaia-lang/bayes.md)
+[x] Wrapper pattern §4.4 surfaced in foundations docs
 ```

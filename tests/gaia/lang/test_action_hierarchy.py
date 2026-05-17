@@ -1,4 +1,4 @@
-from gaia.engine.bayes.runtime import BayesInference, Likelihood, PredictiveModel
+from gaia.engine.bayes.runtime import BayesInference, ModelComparison, Prediction
 from gaia.engine.lang.runtime.action import (
     Action,
     CandidateRelation,
@@ -102,7 +102,7 @@ def test_candidate_relation_is_scaffold_not_reasoning():
 def test_bayes_action_shapes_follow_reasoning_taxonomy():
     assert issubclass(BayesInference, Reasoning)
     assert not issubclass(BayesInference, Directed)
-    assert issubclass(PredictiveModel, BayesInference)
-    assert not issubclass(PredictiveModel, Directed)
-    assert issubclass(Likelihood, BayesInference)
-    assert not issubclass(Likelihood, Directed)
+    assert issubclass(Prediction, BayesInference)
+    assert not issubclass(Prediction, Directed)
+    assert issubclass(ModelComparison, BayesInference)
+    assert not issubclass(ModelComparison, Directed)

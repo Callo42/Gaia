@@ -172,7 +172,9 @@ def test_compose_keeps_own_background_and_warrants_separate_from_child_warrants(
     )
 
 
-def test_compose_can_reference_bayes_model_and_likelihood_actions():
+def test_compose_can_reference_bayes_predict_and_compare_actions():
+    from gaia.engine.lang import Binomial
+
     with CollectedPackage("v6_bayes_composition") as pkg:
         k = Variable(symbol="k", domain=Nat, value=3)
         h = Claim(
@@ -186,15 +188,15 @@ def test_compose_can_reference_bayes_model_and_likelihood_actions():
 
         @compose(name="test:bayes:single", version="1.0")
         def workflow(hypothesis: Claim, observation: Claim) -> Claim:
-            model = bayes.model(
+            model = bayes.predict(
                 hypothesis,
-                observable=k,
-                distribution=bayes.Binomial(n=5, p=0.5),
+                target=k,
+                distribution=Binomial("k under h", n=5, p=0.5),
                 label="model_h",
             )
-            return bayes.likelihood(
+            return bayes.compare(
                 observation,
-                model=model,
+                models=[model],
                 precomputed={hypothesis: -1.0},
                 label="cmp_h",
             )
