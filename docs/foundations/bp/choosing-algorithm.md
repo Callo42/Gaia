@@ -43,16 +43,16 @@
 
 Treewidth 是 BP 复杂度的关键参数。Gaia 用 min-fill 启发式估算（最大极大团减一）。三种方式获取：
 
-### 2.1 看 `gaia run infer` 的日志（推荐）
+### 2.1 看 `gaia run infer` 的输出（推荐）
 
-无需任何额外工具。`InferenceEngine.run` 在选定算法后会 log 一行：
+无需任何额外工具。`gaia run infer` 会在 `Method:` 行显示算法和 treewidth：
 
 ```text
-InferenceEngine: JT (exact), treewidth=6, 142.3ms
-InferenceEngine: TRW-BP, treewidth=24, 318.7ms
+Method: JT (exact), treewidth=6, 142ms
+Method: TRW_BP, treewidth=24, 319ms
 ```
 
-第二个数字就是 min-fill 估出的 treewidth。看到 `treewidth=24` 而 JT 没被选中，说明你的图刚好踩到 JT 阈值（20）以上。
+`treewidth=` 后面的数字就是 min-fill 估出的 treewidth。看到 `treewidth=24` 而 JT 没被选中，说明你的图刚好踩到 JT 阈值（20）以上。
 
 ### 2.2 在 Python 里直接查
 
