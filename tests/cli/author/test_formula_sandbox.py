@@ -18,6 +18,7 @@ from typer.testing import CliRunner
 from gaia.cli.commands.author._formula_sandbox import (
     WHITELIST,
     FormulaSandboxError,
+    extract_engine_lang_names,
     validate_formula_expr,
 )
 from gaia.cli.main import app
@@ -117,6 +118,11 @@ def test_distribution_factory_passes_via_bare_shape() -> None:
     """Distribution factories are reached as bare ``gaia.engine.lang`` imports."""
     out = validate_formula_expr("Normal('response', mu=200, sigma=50)")
     assert "Normal" in out.referenced_names
+
+
+def test_extract_engine_lang_names_includes_bare_distribution_factory() -> None:
+    """Inline Distribution expressions ask the writer to import their factory."""
+    assert extract_engine_lang_names("Binomial('count variable', n=5, p=0.5)") == ("Binomial",)
 
 
 def test_unknown_name_rejected() -> None:

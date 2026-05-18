@@ -137,7 +137,9 @@ WHITELIST: frozenset[str] = (
 # Engine-lang names that need to live on the rendered module's import line
 # when a formula expression references them. ``True`` / ``False`` / ``None``
 # are Python builtins (skip); user-named references resolve separately.
-_ENGINE_LANG_NAMES: frozenset[str] = _FORMULA_PRIMITIVES | _ATOM_CONSTRUCTORS | _TYPED_TERMS
+_ENGINE_LANG_NAMES: frozenset[str] = (
+    _FORMULA_PRIMITIVES | _ATOM_CONSTRUCTORS | _TYPED_TERMS | _DISTRIBUTION_FACTORIES
+)
 
 
 def extract_engine_lang_names(expr: str) -> tuple[str, ...]:

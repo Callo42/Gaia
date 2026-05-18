@@ -242,6 +242,37 @@ def test_model_accepts_inline_distribution(bayes_package: BayesPackage) -> None:
     assert "distribution=Binomial('inline count model', n=395, p=3/4)" in text
 
 
+def test_model_inline_distribution_imports_factory_when_missing(
+    bayes_package: BayesPackage,
+) -> None:
+    """Inline Distribution factories are auto-imported into narrow scaffold files."""
+    bayes_package.source_init.write_text(
+        bayes_package.source_init.read_text().replace("    Binomial,\n", "")
+    )
+    result = runner.invoke(
+        app,
+        [
+            "bayes",
+            "model",
+            "--hypothesis",
+            "hypothesis_a",
+            "--observable",
+            "observable_x",
+            "--distribution",
+            "Binomial('inline count model', n=395, p=3/4)",
+            "--label",
+            "inline_model",
+            "--target",
+            str(bayes_package.root),
+            "--no-check",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    text = bayes_package.source_init.read_text()
+    assert "    Binomial,\n" in text
+    assert "distribution=Binomial('inline count model', n=395, p=3/4)" in text
+
+
 def test_model_accepts_inline_beta_binomial(bayes_package: BayesPackage) -> None:
     """BetaBinomial inline expression also works."""
     result = runner.invoke(
