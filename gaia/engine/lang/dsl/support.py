@@ -275,8 +275,8 @@ def _validate_noise_distribution_unit(noise: Distribution, *, target: Distributi
     """Ensure a Distribution-valued noise model uses the target quantity's unit."""
     from gaia.unit import ureg
 
-    target_unit: str | None = (target.metadata or {}).get("unit")
-    noise_unit: str | None = (noise.metadata or {}).get("unit")
+    target_unit = _distribution_unit(target)
+    noise_unit = _distribution_unit(noise)
     if target_unit is None:
         if noise_unit is not None:
             raise TypeError(
@@ -303,6 +303,47 @@ def _validate_noise_distribution_unit(noise: Distribution, *, target: Distributi
             f"observe(distribution, error=<Distribution>) noise distribution unit "
             f"{noise_unit!r} must match target unit {target_unit!r}; pass a noise "
             "Distribution already expressed in the target's canonical unit."
+        )
+
+
+def _distribution_unit(distribution: Distribution) -> str | None:
+    unit = (distribution.metadata or {}).get("unit")
+    if unit is None:
+        return None
+    from gaia.unit import canonical_unit
+
+    return canonical_unit(unit)
+
+
+def _ensure_noise_unit_for_variable(noise: Distribution, *, target: Variable) -> None:
+    from gaia.unit import ureg
+
+    target_unit = target.unit
+    noise_unit = _distribution_unit(noise)
+
+    if target_unit is None:
+        if noise_unit is not None:
+            raise TypeError(
+                "observe(variable, error=<Distribution>) got a unit-typed noise "
+                f"distribution {noise_unit!r} for unitless target {target.symbol!r}."
+            )
+        return
+    if noise_unit is None:
+        raise TypeError(
+            "observe(variable, error=<Distribution>) noise distribution must carry "
+            f"unit {target_unit!r} because target {target.symbol!r} carries that unit."
+        )
+    try:
+        (1 * ureg.parse_units(noise_unit)).to(ureg.parse_units(target_unit))
+    except Exception as err:
+        raise ValueError(
+            "observe(variable, error=<Distribution>) noise distribution unit "
+            f"{noise_unit!r} is not compatible with target unit {target_unit!r}: {err}"
+        ) from err
+    if noise_unit != target_unit:
+        raise ValueError(
+            "observe(variable, error=<Distribution>) noise distribution unit "
+            f"{noise_unit!r} must match target unit {target_unit!r}."
         )
 
 
@@ -421,33 +462,61 @@ def _anonymous_normal_noise(sigma: float, *, value_unit: str | None) -> Distribu
     )
 
 
-def _coerce_variable_scalar(raw: Any, *, role: str) -> tuple[int | float, str | None]:
+def _coerce_variable_scalar(
+    raw: Any,
+    *,
+    target: Variable,
+    role: str,
+) -> tuple[int | float, str | None]:
     """Coerce a Variable-target observation scalar to (magnitude, unit).
 
-    Mirrors :func:`_coerce_observation_scalar` but for Variable targets,
-    where unit awareness is opt-in: a Quantity is accepted and its unit
-    is captured into the canonical unit slot, a bare scalar is accepted
-    unitless.
+    Variable unit awareness comes from ``target.unit``. Unit-typed variables
+    require Quantity observations convertible to that canonical unit; unitless
+    variables require bare numeric scalars.
 
     Numeric type is preserved (``int`` stays ``int``, ``float`` stays
     ``float``) so discrete-distribution lowering (Binomial / BetaBinomial
     / Poisson logpmf) sees the integer count the author wrote without
     a stray float-cast.
     """
-    from gaia.unit import is_quantity, to_literal
+    from gaia.unit import is_quantity, ureg
+
+    target_unit = target.unit
+    if target_unit is not None:
+        if not is_quantity(raw):
+            raise TypeError(
+                f"observe(variable, {role}=...) must be a gaia.unit.Quantity in "
+                f"{target_unit!r} because target {target.symbol!r} carries that unit; "
+                f"got {type(raw).__name__}: {raw!r}."
+            )
+        try:
+            converted = raw.to(ureg.parse_units(target_unit))
+        except Exception as err:
+            raise ValueError(
+                f"observe(variable, {role}=...) unit {raw.units!s} is not compatible "
+                f"with target unit {target_unit!r}: {err}"
+            ) from err
+        return float(converted.magnitude), target_unit
 
     if is_quantity(raw):
-        literal = to_literal(raw)
-        return literal.value, literal.unit
+        raise TypeError(
+            f"observe(variable, {role}=...) got a unit-typed Quantity for unitless "
+            f"target {target.symbol!r}. Declare Variable(unit=...) or pass a bare scalar."
+        )
     if isinstance(raw, bool) or not isinstance(raw, (int, float)):
         raise TypeError(
-            f"observe(variable, {role}=...) must be a numeric scalar or a "
-            f"gaia.unit.Quantity, got {type(raw).__name__}: {raw!r}."
+            f"observe(variable, {role}=...) must be a numeric scalar, got "
+            f"{type(raw).__name__}: {raw!r}."
         )
     return raw, None
 
 
-def _coerce_variable_error(error: Any, *, value_unit: str | None) -> Distribution | None:
+def _coerce_variable_error(
+    error: Any,
+    *,
+    target: Variable,
+    value_unit: str | None,
+) -> Distribution | None:
     """Sugar scalar error= into anonymous Normal(0, σ); pass Distribution through.
 
     Returns ``None`` for noise-free observations. Scalar ``error=σ``
@@ -458,19 +527,38 @@ def _coerce_variable_error(error: Any, *, value_unit: str | None) -> Distributio
     if error is None:
         return None
     if isinstance(error, Distribution):
+        _ensure_noise_unit_for_variable(error, target=target)
         return error
-    from gaia.unit import is_quantity
+    from gaia.unit import is_quantity, ureg
+
+    if target.unit is not None:
+        if not is_quantity(error):
+            raise TypeError(
+                "observe(variable, error=...) must be a gaia.unit.Quantity or "
+                f"a Distribution because target {target.symbol!r} carries unit "
+                f"{target.unit!r}; got {type(error).__name__}: {error!r}."
+            )
+        try:
+            converted = error.to(ureg.parse_units(target.unit))
+        except Exception as err:
+            raise ValueError(
+                f"observe(variable, error=...) unit {error.units!s} is not compatible "
+                f"with target unit {target.unit!r}: {err}"
+            ) from err
+        sigma = float(converted.magnitude)
+        if sigma <= 0.0:
+            raise ValueError(f"observe(variable, error=sigma) requires sigma > 0, got {error!r}.")
+        return _anonymous_normal_noise(sigma, value_unit=value_unit)
 
     if is_quantity(error):
-        magnitude = float(error.magnitude)
-        if magnitude <= 0.0:
-            raise ValueError(f"observe(variable, error=sigma) requires sigma > 0, got {error!r}.")
-        return _anonymous_normal_noise(magnitude, value_unit=value_unit)
+        raise TypeError(
+            f"observe(variable, error=...) got a unit-typed Quantity for unitless "
+            f"target {target.symbol!r}. Declare Variable(unit=...) or pass a bare scalar."
+        )
     if isinstance(error, bool) or not isinstance(error, (int, float)):
         raise TypeError(
             "observe(variable, error=...) must be None, a positive numeric scalar, "
-            "a gaia.unit.Quantity, or a Distribution; got "
-            f"{type(error).__name__}: {error!r}."
+            f"or a Distribution; got {type(error).__name__}: {error!r}."
         )
     sigma = float(error)
     if sigma <= 0.0:
@@ -496,11 +584,11 @@ def _observe_variable(
     - ``target``: the original Variable object (identity preserved).
     - ``value``: coerced float magnitude.
     - ``noise``: a Distribution Knowledge object or None.
-    - ``unit``: canonical unit string when the value was a Quantity.
+    - ``unit``: target variable's canonical unit string, when present.
     - ``kind``: discriminator ``"observation"``.
     """
-    coerced_value, value_unit = _coerce_variable_scalar(value, role="value")
-    noise = _coerce_variable_error(error, value_unit=value_unit)
+    coerced_value, value_unit = _coerce_variable_scalar(value, target=target, role="value")
+    noise = _coerce_variable_error(error, target=target, value_unit=value_unit)
 
     label_part = target.symbol
     unit_suffix = f" {value_unit}" if value_unit else ""

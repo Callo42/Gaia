@@ -23,7 +23,9 @@ from gaia.engine.lang import (
     LogNormal,
     Normal,
     Poisson,
+    Real,
     StudentT,
+    Variable,
     claim,
     observe,
 )
@@ -220,6 +222,44 @@ def test_gamma_rate_unit_uses_random_variable_unit_for_observations():
     noise = payload["noise"]
     assert noise.kind == "normal"
     assert payload["unit"] == "second"
+
+
+def test_observe_unit_typed_variable_converts_quantity_value_and_error() -> None:
+    temperature = Variable(symbol="T", domain=Real, unit="K")
+    obs = observe(temperature, value=q(26.85, "celsius"), error=q(5, "K"))
+    payload = obs.metadata["observation"]
+    assert math.isclose(payload["value"], 300.0, abs_tol=1e-6)
+    assert payload["unit"] == "kelvin"
+    noise = payload["noise"]
+    assert noise.kind == "normal"
+    assert noise.metadata["unit"] == "kelvin"
+    assert noise.params["sigma"] == 5.0
+
+
+def test_observe_unit_typed_variable_rejects_bare_scalar_value() -> None:
+    temperature = Variable(symbol="T", domain=Real, unit="K")
+    with pytest.raises(TypeError, match=r"must be a gaia\.unit\.Quantity in 'kelvin'"):
+        observe(temperature, value=203)
+
+
+def test_observe_unitless_variable_rejects_quantity_value() -> None:
+    temperature = Variable(symbol="T", domain=Real)
+    with pytest.raises(TypeError, match="unitless"):
+        observe(temperature, value=q(203, "K"))
+
+
+def test_observe_unit_typed_variable_rejects_incompatible_error_distribution() -> None:
+    temperature = Variable(symbol="T", domain=Real, unit="K")
+    noise = Normal("length noise", mu=q(0, "m"), sigma=q(1, "m"))
+    with pytest.raises(ValueError, match="noise distribution unit"):
+        observe(temperature, value=q(203, "K"), error=noise)
+
+
+def test_observe_unitless_variable_rejects_unit_typed_error_distribution() -> None:
+    temperature = Variable(symbol="T", domain=Real)
+    noise = Normal("temperature noise", mu=q(0, "K"), sigma=q(1, "K"))
+    with pytest.raises(TypeError, match="unit-typed noise distribution"):
+        observe(temperature, value=203, error=noise)
 
 
 # --------------------------------------------------------------------------- #
