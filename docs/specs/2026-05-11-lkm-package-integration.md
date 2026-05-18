@@ -51,8 +51,11 @@ This spec requires changes to the current v0.5 Gaia package loader and DSL API:
 **Current v0.5 contract:**
 - Package name must end with `-gaia`
 - Import name derived as `project_name.removesuffix("-gaia").replace("-", "_")`
-- Source must be in `src/{import_name}/__init__.py`
-- `gaia check` and `gaia register` enforce `-gaia` suffix
+- Source package may live in either `<root>/<import_name>/` or
+  `<root>/src/<import_name>/`; the loader checks both and uses the first
+  existing root
+- `gaia build check` and `gaia pkg register` enforce `-gaia` package naming for
+  current Gaia packages
 
 **Required for this spec:**
 - Allow package names without `-gaia` suffix for LKM-generated packages

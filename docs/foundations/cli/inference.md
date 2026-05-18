@@ -136,7 +136,7 @@ Rules:
   them.
 - No-op when the package has no `priors.py`.
 
-Source: `gaia/cli/_packages.py :: apply_package_priors()` and
+Source: `gaia/engine/packaging.py :: apply_package_priors()` and
 `gaia/engine/lang/dsl/register_prior.py :: resolve_priors_to_metadata()`.
 
 ### Legacy reason+prior DSL pairing
@@ -180,7 +180,7 @@ if a matching upstream belief exists, it is passed as `node_priors` to
 This is the lightweight mode: the local package uses upstream **conclusions**
 as fixed priors without loading the upstream reasoning structure.
 
-Source: `gaia/cli/_packages.py :: collect_foreign_node_priors()`
+Source: `gaia/engine/packaging.py :: collect_foreign_node_priors()`
 
 ## Joint Cross-Package Inference (`--depth > 0`)
 

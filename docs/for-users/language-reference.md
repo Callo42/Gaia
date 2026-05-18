@@ -12,7 +12,7 @@ Every Gaia package is a Python project with this layout:
 my-package-gaia/
   pyproject.toml              # [tool.gaia] metadata
   src/my_package/
-    __init__.py               # re-exports all public symbols
+    __init__.py               # package entrypoint and export surface
     motivation.py             # module: settings + questions
     s2_methods.py             # module: methods and setup
     s3_results.py             # module: claims + strategies
@@ -39,7 +39,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 ```
 
-**`__init__.py`** — re-exports from all modules:
+**`__init__.py`** — imports package modules and declares the package export surface:
 
 ```python
 from .motivation import *
@@ -47,7 +47,13 @@ from .s2_methods import *
 from .s3_results import *
 ```
 
-**WARNING:** Do NOT define `__all__` in submodules. If a submodule defines `__all__: list[str] = []`, then `from .module import *` imports nothing, and all claims get anonymous labels. Only define `__all__` in `__init__.py` to control the package's cross-package exports.
+The package root `__all__` is the cross-package interface: names listed there
+are exported into the compiled package manifests. Sibling modules may also carry
+their own literal `__all__` blocks when they are CLI authoring targets:
+`gaia pkg add-module` creates `__all__: list[str] = []`, and `gaia author
+--file <module.py>` can insert new bindings into that module's list. Keep these
+lists literal and static; the CLI intentionally does not edit dynamically
+constructed `__all__` values.
 
 ## Imports
 
@@ -56,11 +62,12 @@ from gaia.engine.lang import (
     claim, note, question,                                  # Knowledge
     Variable, Nat, Real, Probability, Bool,                 # Formula terms
     parameter,                                              # Structured formula claims
-    ClaimAtom, land, lnot, lor, implies, iff,               # Propositional formula helpers
+    ClaimAtom, land, lnot, lor, implies, iff, equals,       # Propositional formula helpers
     forall, exists,                                         # First-order quantifiers
-    contradict, equal, exclusive,                           # Reviewable relations
+    contradict, equal, exclusive, associate,                # Reviewable relations
     depends_on, candidate_relation, materialize,            # Scaffold annotations
     observe, derive, compute, infer, decompose,             # Recommended actions
+    compose, composition,                                   # Action composition
     register_prior,                                         # External prior records
     Normal, LogNormal, Beta, Exponential, Gamma,            # Distribution factories
     StudentT, Cauchy, ChiSquared, Binomial, Poisson,
@@ -848,7 +855,7 @@ top-level generated reference entry.
 
 ```
 src/my_package/
-    __init__.py          # re-exports all public symbols
+    __init__.py          # package entrypoint and export surface
     motivation.py        # "Introduction and Motivation"
     s2_background.py     # "Section 2: Background"
     s3_results.py        # "Section 3: Results"
@@ -868,8 +875,8 @@ tc_prediction = claim("Tc of MgB2 is 39K.")
 | Convention | Visibility | Example |
 |------------|-----------|---------|
 | In `__all__` | Exported (cross-package interface) | `__all__ = ["main_theorem"]` |
-| No `_` prefix | Public (visible in package scope) | `supporting_lemma = claim(...)` |
-| `_` prefix | Private (package-internal) | `_helper = claim(...)` |
+| No `_` prefix | Package-scope binding; may receive an inferred label | `supporting_lemma = claim(...)` |
+| `_` prefix | Python private convention only; not exported unless listed in `__all__` | `_helper = claim(...)` |
 
 **Legacy strategy naming:** Assign legacy strategies to named variables so they appear in `gaia build check --brief` output:
 
@@ -924,12 +931,12 @@ Do not assign manual priors to derived claims, structural expression helpers, re
 | Assigning priors to derived/helper claims | Put priors only on independent probabilistic inputs |
 | `PRIORS = {...}` in `priors.py` | Use `register_prior(claim, value, justification=...)` |
 | `reason` without `prior` in legacy APIs (or vice versa) | Provide both or neither |
-| `__all__` in submodules | Only define in `__init__.py` |
+| Dynamic or computed `__all__` | Keep `__all__` literal and static. Root `__all__` is the cross-package export surface; CLI target submodules may also keep literal lists for `gaia author --file`. |
 | `from gaia.gaia_ir import ...` | Use `from gaia.engine.ir import ...` |
 | `noisy_and()` | Deprecated legacy compatibility path |
 
 ## Next Steps
 
 - [Quick Start](quick-start.md) — create your first package end-to-end
-- [CLI Commands](cli-commands.md) — complete reference for all `gaia` commands
+- [CLI Commands](cli-commands.md) — workflow-oriented guide to the `gaia` command groups
 - [Hole And Bridge Tutorial](hole-bridge-tutorial.md) — cross-package dependency resolution

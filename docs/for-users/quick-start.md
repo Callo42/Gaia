@@ -252,6 +252,6 @@ This is read-only — it never mutates IR, priors, or beliefs.
 ## Next Steps
 
 - [Language Reference](language-reference.md) — full cheat sheet for all knowledge types, operators, and strategies
-- [CLI Commands](cli-commands.md) — complete reference for all `gaia` commands (verb groups, options, exit codes)
+- [CLI Commands](cli-commands.md) — workflow-oriented guide to the `gaia` command groups
 - [Hole And Bridge Tutorial](hole-bridge-tutorial.md) — cross-package dependency resolution with `fills()`
 - [Migration to alpha 0](../migration.md) — if you have a pre-alpha-0 package, the import-path and CLI-verb migration table

@@ -6,10 +6,11 @@ Typer application wiring and command implementation entrypoints. User-facing
 CLI behavior is documented in [CLI Commands](../../for-users/cli-commands.md);
 per-group structure is summarized in the [CLI overview](index.md).
 
-Alpha 0 reorganizes the 9 historical flat verbs into 6 groups plus the
-independent `trace` sub-app. See [Migration to alpha 0](../../migration.md)
-for the verb mapping and the package-loading helpers that moved into
-`gaia.engine.packaging`.
+Alpha 0 moved the 9 historical flat verbs under grouped paths; the current
+v0.5 surface also includes the agent-facing `author`, `bayes`,
+`pkg add-import`, `pkg add-module`, and `pkg scaffold` commands. See
+[Migration to alpha 0](../../migration.md) for the old-to-new verb mapping
+and the package-loading helpers that moved into `gaia.engine.packaging`.
 
 ::: gaia.cli.main
 
@@ -32,6 +33,16 @@ for the verb mapping and the package-loading helpers that moved into
 ::: gaia.cli.commands.add
 
 ::: gaia.cli.commands.register
+
+::: gaia.cli.commands.author
+
+::: gaia.cli.commands.bayes
+
+::: gaia.cli.commands.pkg.add_import
+
+::: gaia.cli.commands.pkg.add_module
+
+::: gaia.cli.commands.pkg.scaffold
 
 ::: gaia.cli.commands.inquiry
 

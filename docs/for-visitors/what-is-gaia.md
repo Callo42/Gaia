@@ -36,7 +36,9 @@ Gaia is a **reasoning engine for scientific knowledge**, with a Python authoring
 
 ## Key Concepts
 
-- **Knowledge** -- A single proposition: a claim, an experimental setup, an observation, or a question. Each one carries a trust score (its "belief").
+- **Knowledge** -- A package record. `claim(...)` records scientific propositions
+  that can carry beliefs; `note(...)` and `question(...)` provide context and
+  inquiry structure without participating directly in BP.
 - **Package** -- A container of knowledge from one paper or one line of reasoning. Like a commit in version control, it represents a coherent batch of new knowledge entering the system.
 - **Factor** -- A reasoning link that connects claims. "These three observations support this conclusion" is a factor. "These two predictions contradict each other" is also a factor.
 - **Belief** -- A number between 0 and 1 representing how much the system trusts a claim, computed from all the evidence in the graph. Not a vote, not a frequency -- a logical consequence of the evidence structure.

@@ -30,8 +30,8 @@ Source references:
 - `gaia/engine/lang/dsl/formula.py`
 - `gaia/engine/lang/dsl/sugar.py`
 - `gaia/engine/lang/compiler/lower_formula.py`
-- `tests/gaia/engine/lang/test_formula_lowering.py`
-- `tests/gaia/engine/lang/test_milestone_a_smoke.py`
+- `tests/gaia/lang/test_formula_lowering.py`
+- `tests/gaia/lang/test_public_surface_milestone_a.py`
 
 ---
 

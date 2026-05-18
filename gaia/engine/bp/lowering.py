@@ -314,7 +314,8 @@ def lower_local_graph(
         noisy_and: 1 entry).
     expand_formal:
         If True, expand FormalStrategy to deterministic factors. If False,
-        fold is required but only implemented when no internal variables exist.
+        raises NotImplementedError; folded FormalStrategy lowering is a
+        future backend path.
     infer_use_degraded_noisy_and:
         If True, lower ``infer`` with CONJUNCTION+SOFT_ENTAILMENT using only
         all-true / all-false CPT entries (information loss for general CPT).

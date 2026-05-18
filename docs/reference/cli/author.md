@@ -38,10 +38,10 @@ all 5 of the DSL verbs the canonical Galileo example exercises, see
 - **`gaia bayes <verb>`** group — predictive-model authoring surface.
   Covered in [`bayes.md`](bayes.md).
 
-## Verb inventory — 19 author verbs + 1 pkg verb
+## Verb inventory — 20 author verbs + 1 pkg verb
 
-The `gaia author` group exposes **19 verbs** partitioned by DSL layer.
-**17** are *statement-emitting* (the cli appends a Python statement to
+The `gaia author` group exposes **20 verbs** partitioned by DSL layer.
+**18** are *statement-emitting* (the cli appends a Python statement to
 `src/<import_name>/__init__.py`); **2** are *file-based validate-and-
 register* (the cli reads a file containing a decorated function and
 records its metadata in `pyproject.toml`).
@@ -69,9 +69,10 @@ records its metadata in `pyproject.toml`).
 | Composition | `composition` | alias of `compose` | **no — file-based** |
 | Typed terms | `variable` | `Variable(symbol=…, domain=…, value=…)` or `Constant(value, primitive)` | yes |
 
-The 20th verb in this reference, `gaia pkg scaffold`, lives in the `pkg`
-group alongside `add` / `register`. It bootstraps a fresh `-gaia` package
-directory layout. See [`gaia pkg scaffold`](#gaia-pkg-scaffold) below.
+The 21st verb in this reference, `gaia pkg scaffold`, lives in the `pkg`
+group alongside `add`, `add-import`, `add-module`, and `register`. It
+bootstraps a fresh `-gaia` package directory layout. See
+[`gaia pkg scaffold`](#gaia-pkg-scaffold) below.
 
 ## Shared flag conventions
 
@@ -394,7 +395,7 @@ Bootstrap a fresh `-gaia` package directory layout.
 
 ```
 gaia pkg scaffold --target <path> [--name <pkg-name>] [--namespace <ns>]
-    [--description <text>] [--with-uuid] [--minimal-imports]
+    [--description <text>] [--with-uuid] [--docstring <text>]
     [--check/--no-check] [--human] [--interactive] [--json/--no-json]
 ```
 
@@ -404,6 +405,8 @@ gaia pkg scaffold --target <path> [--name <pkg-name>] [--namespace <ns>]
 | `--name <pkg-name>` | no | Package name; **must end with `-gaia`**. Defaults to target directory name. |
 | `--namespace <ns>` | no | Package namespace; defaults to the import name. |
 | `--description <text>` | no | Short description for `pyproject.toml`. |
+| `--with-uuid` | no | Opt in to writing `[tool.gaia].uuid`; default is to omit it. |
+| `--docstring <text>` | no | Optional module docstring for the generated `src/<import_name>/__init__.py`. |
 
 The `import_name` is **derived from `--name`** by stripping the
 trailing `-gaia` and converting hyphens to underscores
@@ -415,17 +418,19 @@ If the derived name collides with a Python stdlib module (e.g.
 
 The verb writes:
 
-* `pyproject.toml` with `[tool.gaia] type / uuid / namespace`. UUID
-  auto-generated per call.
-* `src/<import_name>/__init__.py` importing the full author-surface DSL
-  (so subsequent `gaia author <verb>` calls do not trip the postwrite
-  `NameError`) and seeding a placeholder `hypothesis = claim(...)`.
+* `pyproject.toml` with `[tool.gaia] type / namespace`; `uuid` is written only
+  when `--with-uuid` is passed.
+* `src/<import_name>/__init__.py` importing the minimal DSL seed
+  `from gaia.engine.lang import claim` plus `__all__: list[str] = []`. It does
+  not seed a placeholder claim; subsequent `gaia author <verb>` calls populate
+  the file and update `__all__`.
 * `.gaia/.gitkeep` so the cli postwrite check can find the IR artifact
   directory.
 
-`--check` (default on) runs the same `postwrite_check` the statement-
-emitting verbs use against the freshly created package; reports
-`knowledge_count: 1` for the template's seeded hypothesis claim.
+`--check` defaults off because a fresh scaffold has no declarations yet.
+When enabled, it runs the same `postwrite_check` the statement-emitting verbs
+use against the freshly created package; the result is surfaced under
+`payload.check`.
 
 Refuses to write into a non-empty target (exit 2, `prewrite.collision`).
 Validates `--name` ends with `-gaia` (exit 4,
@@ -722,10 +727,10 @@ demonstration that the cli surface covers the v0.5 engine end-to-end.
 
 ## See also
 
-* [`gaia pkg`](pkg.md) — install / publish / scaffold packages.
+* [`gaia pkg`](pkg.md) — install dependencies, manage module/import plumbing, publish, and scaffold packages.
 * [`gaia build`](build.md) — compile / check the package the cli wrote.
 * [Foundational CLI workflow](../../foundations/cli/workflow.md) — narrative tour of the cli day-to-day.
-* [CLI Commands (full)](../../for-users/cli-commands.md) — every other cli verb's option surface.
+* [CLI Commands](../../for-users/cli-commands.md) — workflow-oriented guide for the broader cli surface.
 
 ## Implementation
 

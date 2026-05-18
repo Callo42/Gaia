@@ -29,7 +29,7 @@ Source: `gaia/cli/commands/compile.py`
 
 ### Step 1: Load Package Metadata
 
-`load_gaia_package()` in `gaia/cli/_packages.py` reads `pyproject.toml` and extracts:
+`load_gaia_package()` in `gaia/engine/packaging.py` reads `pyproject.toml` and extracts:
 
 - `[project].name` -- required, used to derive the Python import name
 - `[project].version` -- required, becomes `CollectedPackage.version`
@@ -53,7 +53,7 @@ The first root where the directory exists wins. If neither exists, the command a
 
 ### Step 2: Execute DSL Module
 
-The loader performs a fresh dynamic import of the package module (`gaia/cli/_packages.py:_import_fresh`):
+The loader performs a fresh dynamic import of the package module (`gaia/engine/packaging.py:_import_fresh`):
 
 1. **Evict stale modules** -- removes any previously cached modules matching the import name from `sys.modules`
 2. **Invalidate bytecode** -- calls `importlib.invalidate_caches()` and sets `sys.dont_write_bytecode = True` during import
@@ -68,7 +68,7 @@ correct `CollectedPackage`.
 
 **Auto-registration via contextvars:** each DSL dataclass (`Knowledge`, `Strategy`, `Operator` in `gaia/engine/lang/runtime/nodes.py`) has a `__post_init__` that looks up the current `CollectedPackage` from the `_current_package` context variable. If set, the object registers itself immediately. If not set, it falls back to `infer_package_from_callstack()`, which walks the call stack to find the nearest non-`gaia.engine.lang` module, locates its `pyproject.toml`, and loads (or retrieves) the corresponding `CollectedPackage`.
 
-**Label inference** (`_assign_labels` in `gaia/cli/_packages.py`): after import completes, the loader imports the package root and all non-helper source modules, then scans loaded module attributes to assign labels to unlabeled DSL objects:
+**Label inference** (`_assign_labels` in `gaia/engine/packaging.py`): after import completes, the loader imports the package root and all non-helper source modules, then scans loaded module attributes to assign labels to unlabeled DSL objects:
 
 - `__all__` controls which labels become exported cross-package interface
   labels; it does **not** limit which declarations are discovered or compiled.
@@ -197,7 +197,7 @@ The compile command runs `validate_local_graph()` (`gaia/engine/ir/validator.py`
 
 If validation produces errors, the command aborts with exit code 1. Warnings are printed but do not block compilation.
 
-On success, `write_compiled_artifacts()` (`gaia/cli/_packages.py`) writes:
+On success, `write_compiled_artifacts()` (`gaia/engine/packaging.py`) writes:
 
 - `.gaia/ir.json` -- the full `LocalCanonicalGraph` serialized as indented, sorted-keys JSON
 - `.gaia/ir_hash` -- the bare hash string

@@ -47,4 +47,4 @@ The [Foundations](foundations/README.md) directory contains Gaia's conceptual re
 | `archive/` | Historical design docs, previous foundations versions, completed plans |
 | `design/` | Scaling belief propagation, engineering related work |
 | `ideas/` | Design ideas, academic related work survey |
-| `examples/` | Worked examples (Einstein elevator, Galileo tied-balls) |
+| `examples/` | Worked examples (Galileo falling bodies, Mendel inheritance) |

@@ -2,11 +2,13 @@
 
 > **Status:** Current canonical (alpha 0)
 
-Reference for the Gaia Lang v0.5 CLI. The installed entrypoint is `gaia`.
+Workflow-oriented reference for the Gaia Lang v0.5 CLI. The installed entrypoint
+is `gaia`; the installed `gaia --help` output and generated
+[`docs/reference/cli`](../reference/cli/index.md) pages are the command-surface
+authority when this guide and the executable diverge.
 
-Alpha 0 organizes the historical 9 flat verbs into 6 logical groups plus
-the independent `trace` sub-app. The 22 leaf verbs keep their pre-alpha-0
-semantics and option flags — only the top-level argument structure changed.
+v0.5 organizes authoring, compilation, inference, review, and registry workflows
+into explicit command groups:
 
 ```text
 gaia build    init / compile / check          Create and validate a package
@@ -15,13 +17,23 @@ gaia inspect  starmap / starmap-replay        Visualize the compiled graph
 gaia review   (skeleton — no commands yet)    Reserved for reviewer tooling
 gaia inquiry  focus / review / obligation /   Local semantic-inquiry loop
               hypothesis / tactics / reject
-gaia pkg      add / register                  Install and publish packages
+gaia pkg      add / add-import / add-module / Package dependencies, modules,
+              register / scaffold             scaffolds, and registry publish
+gaia author   claim / note / question /       Agent-first DSL authoring
+              derive / observe / compute /
+              infer / relations / scaffolds
+gaia bayes    model / compare /               Bayesian model and distribution
+              distribution literals           authoring helpers
 gaia trace    verify / review / show          ARM Trace tooling (independent)
 ```
 
 > **Note**: `gaia review` is a help-visible empty skeleton in alpha 0 and
 > is **different** from `gaia inquiry review` and `gaia trace review`,
 > which are pre-existing inner subcommands and keep their invocation paths.
+
+For the full generated references of the two agent-first surfaces, see
+[`gaia author`](../reference/cli/author.md) and
+[`gaia bayes`](../reference/cli/bayes.md).
 
 For the old-to-new verb mapping (and the related Python import-path
 changes), see [Migration to alpha 0](../migration.md).
@@ -372,7 +384,8 @@ printing the tactic log for the inquiry.
 
 ## `gaia pkg`
 
-Install and publish packages.
+Install dependencies, manage package-source plumbing, scaffold packages, and
+publish release metadata.
 
 ### `gaia pkg add`
 
@@ -402,6 +415,44 @@ What it does:
 That cached `dep_beliefs` file is used by `gaia run infer --depth 0` as a
 flat prior source for foreign nodes. If the registry release has no beliefs
 file, the command prints a note and still installs the dependency.
+
+### `gaia pkg add-import`
+
+Insert an idempotent Python import into a package source file.
+
+```bash
+gaia pkg add-import --from probabilities --names DOMINANT_COUNT,TOTAL_COUNT
+gaia pkg add-import --from .priors --names external_prior --file __init__.py
+```
+
+| Option | Description |
+|--------|-------------|
+| `--from` | Module to import from. Bare and leading-dot forms resolve against the package import name; dotted absolute forms are kept verbatim. |
+| `--names` | Comma-separated Python identifiers to import. Existing imports are skipped. |
+| `--target` | Target Gaia package root (default: `.`) |
+| `--file` | Source file under `src/<import_name>/` to edit (default: `__init__.py`) |
+
+Use this for plain Python data plumbing between sibling modules; it does not
+create DSL records by itself.
+
+### `gaia pkg add-module`
+
+Create a sibling Python module under `src/<import_name>/`.
+
+```bash
+gaia pkg add-module --name priors --imports register_prior
+gaia pkg add-module --name probabilities.py --docstring "Mendel count constants"
+```
+
+| Option | Description |
+|--------|-------------|
+| `--name` | Module name or filename. Must be a valid Python identifier and cannot start with `__`. |
+| `--target` | Target Gaia package root (default: `.`) |
+| `--imports` | Optional comma-separated DSL symbols to seed from `gaia.engine.lang` |
+| `--docstring` | Optional module docstring |
+
+The created file contains a literal empty `__all__: list[str] = []`; later
+`gaia author --file <module.py>` calls can add new exported bindings to it.
 
 ### `gaia pkg register`
 
@@ -476,8 +527,8 @@ time and contains exported claims only. It is distinct from local
 
 ## `gaia trace`
 
-Verify, review, and inspect ARM execution traces. Independent of the 6
-groups; sub-app internals are unchanged in alpha 0.
+Verify, review, and inspect ARM execution traces. `trace` is an independent
+top-level sub-app; its subcommand internals are unchanged in alpha 0.
 
 ```bash
 gaia trace verify trace.jsonl

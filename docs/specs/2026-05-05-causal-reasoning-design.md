@@ -43,7 +43,7 @@ Concretely:
 | `gaia.lang.formula.predicate.Causes` | AST marker (exists today via PR #505) | none |
 | `gaia.lang.dsl.causal.causal` / existing `gaia.lang.dsl.sugar.causal` re-export | `causal()` declaration helper — fourth verb family alongside Relate / Correlate / Strategy | none |
 | `gaia.causal.dag` (NEW, kernel) | `CausalDAG` view over a `CollectedPackage` | `networkx` |
-| `gaia.causal.intervene` (NEW, kernel) | `do(X=x)` rewrite + `.query(Y)` | reuses `gaia.bp` |
+| `gaia.causal.intervene` (NEW, kernel) | `do(X=x)` rewrite + `.query(Y)` | reuses `gaia.engine.bp` |
 | `gaia.causal.adapters.y0` (NEW, extra) | Symbolic do-calculus identification | `y0` (extra: `gaia[causal-do]`) |
 
 `networkx` is promoted to a kernel dependency (pure Python, ~3MB, no native extensions, widely trusted). `y0` is not — its base install pulls pandas + scikit-learn + statsmodels, which violates the "kernel stays light" rule, and Gaia only uses its symbolic identifier, not its data-driven parts.
@@ -86,7 +86,7 @@ c  = causal(cause=X, effect=Y,            # extended authoring helper
           ▼              ▼                            ▼
    gaia.causal.dag  gaia.causal.intervene      gaia.causal.adapters.y0
    ──────────────  ──────────────────────      ───────────────────────
-   (kernel)        (kernel, via gaia.bp)       (extra: gaia[causal-do])
+   (kernel)        (kernel, via gaia.engine.bp)       (extra: gaia[causal-do])
    NetworkX DAG    mutilate + Gaia BP           symbolic do-calculus
    d-separation    numeric P(Y|do(X=x))          identification
 ```
@@ -121,9 +121,9 @@ PR #510 introduced the compiler-owned `metadata.causal` operand descriptors. D1 
 
 `dag_edge` is populated by the compiler **after** QID assignment. Lang runtime never sets it — consumers that need to read the DAG use `dag_edge`; consumers that need provenance back to authored Variables read the original `cause` / `effect`. `cpd` is populated from the `causal()` declaration's authored parameters or from explicit universal-claim metadata (§5.2). A `CAUSAL` claim missing `metadata.causal.cause` or `.effect` is invalid under the v0.6 compiler path and should fail fast.
 
-### 1.2 `gaia.bp` additions
+### 1.2 `gaia.engine.bp` additions
 
-One public helper is added to `gaia.bp`:
+One public helper is added to `gaia.engine.bp`:
 
 ```python
 # gaia/bp/factor_graph.py
@@ -199,7 +199,7 @@ gaia/
 
 - `gaia.causal.dag` **reads** a `CollectedPackage` (or equivalent) and produces a `CausalDAG`. It does not write IR.
 - `gaia.causal.queries` operates on a `CausalDAG`. Pure graph algorithms, no IR awareness.
-- `gaia.causal.intervene` **reads** a compiled IR artifact, lowers it through the standard `gaia.bp.lowering` path (which now handles `causal()` declarations and per-instance grounding), rewrites the resulting `FactorGraph` (`mutilate`), and runs BP. It does not write IR. **No separate causal lowering module is needed** — the compiled causal metadata and declaration parameters carry enough information that ordinary lowering can register CNID variables and emit the causal CPT factor.
+- `gaia.causal.intervene` **reads** a compiled IR artifact, lowers it through the standard `gaia.engine.bp.lowering` path (which now handles `causal()` declarations and per-instance grounding), rewrites the resulting `FactorGraph` (`mutilate`), and runs BP. It does not write IR. **No separate causal lowering module is needed** — the compiled causal metadata and declaration parameters carry enough information that ordinary lowering can register CNID variables and emit the causal CPT factor.
 - `gaia.causal.adapters.y0` **reads** a `CausalDAG` and a symbolic query; returns an expression or a `NotIdentifiable` diagnosis. It does not touch `FactorGraph`.
 - `gaia.lang.dsl.causal` is the authored-side surface: `causal()`, `do()`, `query()`, `ate()`.
 
@@ -431,9 +431,9 @@ ate_co2_to_temp = ate(co2, temp)
 
 ```python
 # gaia/causal/intervene.py, conceptual pseudo-code
-from gaia.bp.factor_graph import mutilate                 # §1.2
-from gaia.bp.lowering import lower_local_graph            # existing
-from gaia.bp.engine import InferenceEngine                # existing
+from gaia.engine.bp.factor_graph import mutilate          # §1.2
+from gaia.engine.bp.lowering import lower_local_graph     # existing
+from gaia.engine.bp.engine import InferenceEngine         # existing
 
 def _compute(
     pkg_artifact,
@@ -466,7 +466,7 @@ def _compute(
 **Why this is correct.** For a DAG with factorization `P(V) = ∏ᵢ P(vᵢ | pa(vᵢ))`, Pearl's truncated factorization for `P(V | do(X=x))` is identical to `P(V)` with every `P(xᵢ | pa(xᵢ))` replaced by the point mass on `xᵢ = x`. In Gaia v0.6 this is realised by:
 
 1. Each `causal()` declaration contributes explicit CPD parameters. Multi-parent effects compose via noisy-OR (§4.1.2) into one canonical `CONDITIONAL` factor per effect node.
-2. CNID variables (Variables, per PR #505 §2.4 they have no IR Knowledge) are registered as BP variables during causal lowering inside the standard `gaia.bp.lowering` path.
+2. CNID variables (Variables, per PR #505 §2.4 they have no IR Knowledge) are registered as BP variables during causal lowering inside the standard `gaia.engine.bp.lowering` path.
 3. The generated causal factor carries `metadata={"modality": "causal", "source_claim_qid": ..., "dag_edge": ...}` copied from the compiled claim metadata (§1.2).
 4. `mutilate(fg, intervened)` identifies and drops only the factor whose conclusion ∈ intervened **and** whose factor metadata says `modality == "causal"` (see §4.4). Logical factors (deduction, IMPLICATION operator helpers) are preserved.
 5. `observe()` clamps the intervened variable to its target value.
@@ -802,7 +802,7 @@ Independently shippable: enables `gaia check causal`, makes renderings causal-aw
 
 Depends on: D₁.
 
-- **`gaia.bp.factor_graph.mutilate`:** modality-aware helper (§1.2, §4.3, §4.4). Drops only provenance-tagged causal `CONDITIONAL` factors; logical factors preserved.
+- **`gaia.engine.bp.factor_graph.mutilate`:** modality-aware helper (§1.2, §4.3, §4.4). Drops only provenance-tagged causal `CONDITIONAL` factors; logical factors preserved.
 - **Multi-parent noisy-OR composition:** lowering pass that combines multiple `causal()` edges into one provenance-tagged `CONDITIONAL` factor per effect node (§4.1.2). Sits inside the existing `gaia/bp/lowering.py` — no new `gaia.causal.lowering` module needed; the compiled claim metadata and CPD parameters carry enough information to register CNID variables and emit the canonical CPT factor at standard lower time.
 - **Per-instance grounding for causal `forall`:** compiler dual to `gaia/lang/compiler/lower_formula.py:107-192`'s logical lowering — emits per-instance Knowledge nodes plus deduction edges from universal to instance, generated CNID variables for each instance, and one provenance-tagged causal `CONDITIONAL` factor per instance pair (§5.2).
 - **`gaia.causal.intervene`:** `Intervention`, `CausalQueryResult`, `_compute` using `mutilate` + Gaia BP (no separate causal lowering module).

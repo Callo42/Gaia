@@ -26,11 +26,14 @@ $$\psi = \text{cpt}[idx] \text{ 当 } H=1, \quad \psi = 1 - \text{cpt}[idx] \tex
 | complement | 0 | 1 | 1 | 0 | $A \oplus B$ |
 | conjunction | 0 | 0 | 0 | 1 | $A \wedge B$ |
 | disjunction | 0 | 1 | 1 | 1 | $A \vee B$ |
-| implication | 1 | 1 | 0 | 1 | $A \to B$（A 在 variables，B 是 conclusion） |
+| implication | 1 | 1 | 0 | 1 | $H = (A \to B)$（A/B 在 `variables`，H 是 helper `conclusion`） |
 
 实际 potential 使用 strict delta（$0$ / $1$）。Cromwell clamp 用于 unary
 evidence / priors 和 soft probability 参数，不用于 deterministic truth
-table 本身。
+table 本身。IR arity 上，`implication` 与其他二元关系一样使用
+`variables=[antecedent, consequent]` 和独立 helper `conclusion`；deduction
+/ support 的 FormalStrategy skeleton 在 BP lowering 中会特殊消费该 helper
+并降成 `CONDITIONAL` 或 `SOFT_ENTAILMENT`。
 
 一元 negation 使用二值 CPT：$P(N=1\mid A=0)=1$，$P(N=1\mid A=1)=0$。
 
@@ -333,8 +336,7 @@ $$m_{f \to M}(1) \propto m_{A \to f}(1) \cdot m_{B \to f}(1)$$
 ```python
 for op in formal_expr.operators:
     fid = generate_factor_id(op)
-    cpt = operator_to_cpt(op.operator)  # 查表：equivalence→[1-ε,ε,ε,1-ε], ...
-    add_conditional_factor(fid, op.variables, op.conclusion, cpt)
+    graph.add_factor(fid, _OPERATOR_MAP[op.operator], op.variables, op.conclusion)
 ```
 
 **不需要**：二元因子特殊路径、dead-end 检测、gate_var、`conclusion=None` 标记。
@@ -343,10 +345,14 @@ for op in formal_expr.operators:
 
 | Operator 类别 | conclusion 先验 | 理由 |
 |--------------|----------------|------|
-| Relation（equivalence, contradiction, complement, implication warrant） | $1 - \varepsilon$ | 断言：算子的存在 = 关系成立 |
+| Relation（equivalence, contradiction, complement, top-level implication） | $1 - \varepsilon$ | 断言：算子的存在 = 关系成立 |
 | Expression（negation, conjunction, disjunction） | $0.5$ | 计算：belief 由 variables 决定 |
 
-判定规则：conclusion 的 $P(H\!=\!1)$ 能否从 $\pi(\text{variables})$ 推导出来？能 → 0.5（计算型）；不能 → $1-\varepsilon$（断言型）。
+Deduction / support 的 FormalStrategy implication 是特殊路径：helper 会在
+lowering 中被消费并移除，分别变成 `CONDITIONAL` 和 `SOFT_ENTAILMENT`。
+除此之外的判定规则是：conclusion 的 $P(H\!=\!1)$ 能否从
+$\pi(\text{variables})$ 推导出来？能 → 0.5（计算型）；不能 →
+$1-\varepsilon$（断言型）。
 
 ### 7.3 与势函数和推理文档的关系
 

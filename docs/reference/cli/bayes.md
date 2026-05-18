@@ -30,11 +30,13 @@ for the contract.
 | Continuous dist | `cauchy` | `Cauchy(content, mu=…, gamma=…)` |
 | Continuous dist | `chi-squared` | `ChiSquared(content, df=…)` |
 
-Every verb shares the [`gaia author`](author.md) cross-cutting flags
-(`--target`, `--file`, `--label`, `--check / --no-check`, `--human`,
-`--interactive`, `--metadata`). Distribution verbs forward their
-parameter values verbatim; pre-write parses the rendered statement as
-Python to catch obvious malformations, and the engine's Pydantic
+Every verb shares the statement-writing flags `--target`, `--file`, `--label`,
+`--check / --no-check`, `--human`, `--interactive`, and `--metadata`.
+`model` and `compare` also expose the explicit `--json / --no-json`
+courtesy switch used by `gaia author`; the distribution-literal verbs keep
+JSON output as their default contract without surfacing that alias. Distribution
+verbs forward their parameter values verbatim; pre-write parses the rendered
+statement as Python to catch obvious malformations, and the engine's Pydantic
 validators surface out-of-range values at engine-load time.
 
 ## Distribution-literal verbs
@@ -160,7 +162,7 @@ gaia bayes model --hypothesis blending_inheritance_model \
 # Model comparison
 gaia bayes compare --data f2_count_observation \
     --model mendel_count_model --against diffuse_count_model \
-    --label mendel_count_likelihood \
+    --label mendel_count_comparison \
     --target ./mendel-cli-mirror-gaia
 ```
 

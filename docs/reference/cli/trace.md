@@ -1,7 +1,7 @@
 # `gaia trace`
 
-Verify, review, and inspect ARM execution traces. Independent of the 6
-groups; sub-app and its internals are **unchanged** in alpha 0.
+Verify, review, and inspect ARM execution traces. `trace` is an independent
+top-level sub-app; its subcommands and internals are **unchanged** in alpha 0.
 
 ```text
 gaia trace verify <trace.jsonl>            Validate schema + hash chain + manifest
