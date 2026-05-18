@@ -24,6 +24,13 @@ def q(value: float, unit: str) -> QuantityT:
     return ureg.Quantity(value, unit)
 
 
+def canonical_unit(unit: str) -> str:
+    """Return Gaia's canonical Pint unit string for an authored unit."""
+    if not isinstance(unit, str) or not unit.strip():
+        raise TypeError("unit must be a non-empty string")
+    return str(ureg.parse_units(unit.strip()))
+
+
 def to_literal(quantity: QuantityT) -> QuantityLiteral:
     """Convert a Gaia runtime quantity to the IR literal carrier."""
     if not is_quantity(quantity):

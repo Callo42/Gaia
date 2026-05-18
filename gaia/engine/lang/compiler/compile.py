@@ -244,6 +244,7 @@ def _metadata_to_ir(value: Any, knowledge_map: dict[int, str]) -> Any:
             "kind": "variable",
             "symbol": value.symbol,
             "domain": domain,
+            "unit": value.unit,
         }
     if isinstance(value, BoolExpr):
         return {

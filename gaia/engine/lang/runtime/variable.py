@@ -32,6 +32,7 @@ class Variable(Knowledge):
     symbol: str = field(default="")
     domain: PrimitiveType | Domain = field(default=cast(PrimitiveType, None))
     value: Any | None = None
+    unit: str | None = None
 
     def __init__(
         self,
@@ -39,6 +40,7 @@ class Variable(Knowledge):
         symbol: str,
         domain: PrimitiveType | Domain,
         value: Any | None = None,
+        unit: str | None = None,
         content: str | None = None,
         format: str = "markdown",
         **kwargs: Any,
@@ -52,13 +54,20 @@ class Variable(Knowledge):
         if value is not None:
             _validate_value(value, domain)
 
+        canonical_unit_value: str | None = None
+        if unit is not None:
+            from gaia.unit import canonical_unit
+
+            canonical_unit_value = canonical_unit(unit)
+
         if content is None:
-            content = _default_content(symbol, domain, value)
+            content = _default_content(symbol, domain, value, canonical_unit_value)
 
         super().__init__(content=content, type="variable", format=format, **kwargs)
         self.symbol = symbol
         self.domain = domain
         self.value = value
+        self.unit = canonical_unit_value
 
     def __post_init__(self) -> None:
         """Associate the variable with package provenance without IR registration."""
@@ -84,8 +93,14 @@ def _validate_value(value: Any, domain: PrimitiveType | Domain) -> None:
             raise ValueError(f"value {value!r} not in domain members of {domain.label or 'Domain'}")
 
 
-def _default_content(symbol: str, domain: PrimitiveType | Domain, value: Any | None) -> str:
+def _default_content(
+    symbol: str,
+    domain: PrimitiveType | Domain,
+    value: Any | None,
+    unit: str | None,
+) -> str:
     domain_name = domain.name if isinstance(domain, PrimitiveType) else (domain.label or "Domain")
+    unit_part = f" [{unit}]" if unit is not None else ""
     if value is None:
-        return f"Variable {symbol}: {domain_name}"
-    return f"Variable {symbol}: {domain_name} = {value!r}"
+        return f"Variable {symbol}: {domain_name}{unit_part}"
+    return f"Variable {symbol}: {domain_name}{unit_part} = {value!r}"
