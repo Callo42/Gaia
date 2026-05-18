@@ -1,6 +1,13 @@
 """Bayes DSL verbs."""
 
-from gaia.engine.bayes.dsl.compare import compare
-from gaia.engine.bayes.dsl.predict import predict
+from gaia.engine.bayes.dsl.model import model
 
-__all__ = ["compare", "predict"]
+
+def compare(*args, **kwargs):
+    """Compare predictive models against data."""
+    from gaia.engine.bayes.dsl.compare import compare as _compare
+
+    return _compare(*args, **kwargs)
+
+
+__all__ = ["compare", "model"]

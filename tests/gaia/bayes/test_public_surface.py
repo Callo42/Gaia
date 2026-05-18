@@ -28,27 +28,29 @@ def test_bayes_canonical_peer_module_imports() -> None:
     import gaia.engine.bayes as bayes
     from gaia.engine.bayes import (
         BayesInference,
+        Model,
         ModelComparison,
-        Prediction,
+        PrecomputedLikelihoods,
         compare,
-        predict,
+        model,
     )
     from gaia.engine.bayes.dsl import compare as dsl_compare
-    from gaia.engine.bayes.dsl import predict as dsl_predict
+    from gaia.engine.bayes.dsl import model as dsl_model
     from gaia.engine.lang.runtime.action import Reasoning
 
-    assert predict is dsl_predict
+    assert model is dsl_model
     assert compare is dsl_compare
-    assert "predict" in bayes.__all__
+    assert "model" in bayes.__all__
     assert "compare" in bayes.__all__
     assert "PrecomputedLikelihoods" in bayes.__all__
     assert issubclass(BayesInference, Reasoning)
-    assert issubclass(Prediction, BayesInference)
+    assert issubclass(Model, BayesInference)
     assert issubclass(ModelComparison, BayesInference)
+    assert PrecomputedLikelihoods is bayes.PrecomputedLikelihoods
     # The legacy verbs / Action classes are gone from the public surface.
-    for removed in ("model", "likelihood", "data"):
+    for removed in ("predict", "data", "likelihood"):
         assert not hasattr(bayes, removed)
-    for removed in ("PredictiveModel", "Likelihood"):
+    for removed in ("Prediction", "PredictiveModel", "Likelihood"):
         assert not hasattr(bayes, removed)
 
 
