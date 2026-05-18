@@ -76,7 +76,14 @@ model1 = bayes.predict(
 model2 = bayes.predict(
     h2, target=k, distribution=Binomial("k under h2", n=5, p=theta), label="model2"
 )
-cmp = bayes.compare(data, models=[model1, model2], label="cmp")
+# Explicit ``pairwise_contradiction`` so this test exercises the
+# at-most-one prior-coherence rule (the default is exhaustive).
+cmp = bayes.compare(
+    data,
+    models=[model1, model2],
+    exclusivity="pairwise_contradiction",
+    label="cmp",
+)
 
 __all__ = ["h1", "h2", "data", "model1", "model2", "cmp"]
 """,

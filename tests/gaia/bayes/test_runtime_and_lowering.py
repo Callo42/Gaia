@@ -26,7 +26,7 @@ from gaia.engine.lang import (
     parameter,
 )
 from gaia.engine.lang.compiler.compile import compile_package_artifact
-from gaia.engine.lang.runtime.action import Observe
+from gaia.engine.lang.runtime.action import Contradict, Exclusive, Observe
 from gaia.engine.lang.runtime.knowledge import _current_package
 from gaia.engine.lang.runtime.package import CollectedPackage
 from gaia.engine.lang.runtime.roles import roles_for_package
@@ -459,7 +459,17 @@ def test_multiple_compares_reuse_auto_generated_pairwise_contradiction():
     )
 
 
-def test_exhaustive_equal_prior_argmax_tracks_largest_log_likelihood():
+def test_three_model_pairwise_contradiction_argmax_tracks_largest_log_likelihood():
+    """3-hypothesis comparison: argmax of BP beliefs tracks the largest log-likelihood.
+
+    Uses ``pairwise_contradiction`` because the new default
+    ``exhaustive_pairwise_complement`` is currently restricted to
+    2-hypothesis comparisons. Once an N-ary Exclusive operator lands
+    (see the follow-up issue), this fixture should be re-pointed at
+    ``exhaustive_pairwise_complement`` and the assertion on
+    ``beliefs[h_high]`` can be tightened past the dilution caused by
+    the at-most-one ``(F,F,F)`` joint state.
+    """
     pkg = CollectedPackage(name="bayes_argmax_pkg", namespace="t")
     token = _current_package.set(pkg)
     try:
@@ -484,7 +494,7 @@ def test_exhaustive_equal_prior_argmax_tracks_largest_log_likelihood():
         comparison = bayes.compare(
             data,
             models=[model_low, model_mid, model_high],
-            exclusivity="exhaustive_pairwise_complement",
+            exclusivity="pairwise_contradiction",
             precomputed={h_low: -4.0, h_mid: -2.0, h_high: -1.0},
             label="cmp",
         )
@@ -525,3 +535,188 @@ def test_full_pipeline_mendel_with_real_binomial_no_precomputed():
     assert beliefs[h_31_id] > 0.95
     assert beliefs[h_null_id] < 0.03
     assert beliefs[cmp_id] > 0.99
+
+
+# ---------------------------------------------------------------------------
+# Default-exclusivity contract (regression for the bayes-unified default fix)
+# ---------------------------------------------------------------------------
+
+
+def test_default_exclusivity_emits_exclusive_for_two_models():
+    """Calling ``compare()`` without ``exclusivity=`` auto-generates Exclusive.
+
+    The default was changed from ``"pairwise_contradiction"`` (at-most-one,
+    which silently diluted Bayesian model-selection posteriors via the
+    "(F,F)" joint state) to ``"exhaustive_pairwise_complement"``
+    (exactly-one for 2 models). The auto-generated structural action must
+    therefore be ``Exclusive``, not ``Contradict``.
+    """
+    pkg = CollectedPackage(name="bayes_default_exclusivity_pkg", namespace="t")
+    token = _current_package.set(pkg)
+    try:
+        theta = Variable(symbol="theta", domain=Probability)
+        k = Variable(symbol="k", domain=Nat, value=4)
+        h1 = parameter(theta, 0.3, content="theta = 0.3.", prior=0.5, label="h1")
+        h2 = parameter(theta, 0.7, content="theta = 0.7.", prior=0.5, label="h2")
+        data = observe(k, value=4, label="data")
+        m1 = bayes.predict(
+            h1, target=k, distribution=Binomial("k under h1", n=5, p=theta), label="m1"
+        )
+        m2 = bayes.predict(
+            h2, target=k, distribution=Binomial("k under h2", n=5, p=theta), label="m2"
+        )
+        cmp_result = bayes.compare(data, models=[m1, m2], label="cmp")
+    finally:
+        _current_package.reset(token)
+
+    exclusives = [
+        a
+        for a in pkg.actions
+        if isinstance(a, Exclusive) and {id(a.a), id(a.b)} == {id(h1), id(h2)}
+    ]
+    contradicts = [
+        a
+        for a in pkg.actions
+        if isinstance(a, Contradict) and {id(a.a), id(a.b)} == {id(h1), id(h2)}
+    ]
+    assert len(exclusives) == 1, (
+        f"default compare() should auto-generate one Exclusive(h1, h2); "
+        f"got exclusives={len(exclusives)}, contradicts={len(contradicts)}"
+    )
+    assert contradicts == [], (
+        "default compare() must not fall back to Contradict — that would "
+        "be the old at-most-one semantics."
+    )
+
+    metadata = cmp_result.metadata["comparison"]
+    assert metadata["exclusivity"] == "exhaustive_pairwise_complement"
+
+
+def test_default_exclusivity_yields_bayes_factor_posterior():
+    """Default 2-model ``compare()`` produces strict Bayes-factor posterior odds.
+
+    Builds the fixture inline (no helper) so the assertion really
+    exercises ``bayes.compare()``'s own default. Under
+    ``exhaustive_pairwise_complement`` and equal priors, posterior odds
+    equal the (Cromwell-clamped) likelihood ratio. This is the property
+    that the old default — ``pairwise_contradiction`` plus α=0.5 —
+    did **not** preserve: an "all-false" joint state used to carry
+    substantial mass and dilute the comparison.
+    """
+    pkg = CollectedPackage(name="bayes_default_posterior_pkg", namespace="t")
+    token = _current_package.set(pkg)
+    try:
+        theta = Variable(symbol="theta", domain=Probability)
+        k = Variable(symbol="k", domain=Nat, value=295)
+        n = 395
+        h_31 = parameter(theta, 0.75, content="theta = 0.75.", prior=0.5, label="h_3_1")
+        h_null = parameter(theta, 0.5, content="theta = 0.5.", prior=0.5, label="h_null")
+        data = observe(k, value=295, label="data")
+        m_31 = bayes.predict(
+            h_31, target=k, distribution=Binomial("k under 3:1", n=n, p=theta), label="m_31"
+        )
+        m_null = bayes.predict(
+            h_null, target=k, distribution=Binomial("k under null", n=n, p=theta), label="m_null"
+        )
+        # No explicit ``exclusivity=`` — we want the verb's own default.
+        bayes.compare(data, models=[m_31, m_null], label="cmp")
+    finally:
+        _current_package.reset(token)
+
+    compiled = compile_package_artifact(pkg)
+    h_31_id = compiled.knowledge_ids_by_object[id(h_31)]
+    h_null_id = compiled.knowledge_ids_by_object[id(h_null)]
+
+    beliefs, _ = exact_inference(lower_local_graph(compiled.graph))
+    odds = beliefs[h_31_id] / beliefs[h_null_id]
+    assert odds > 100.0, (
+        "Bayesian model selection should put Mendel posterior >100x "
+        f"above null under k=295/n=395; got odds={odds:.2f}"
+    )
+    assert beliefs[h_31_id] > 0.95
+    assert beliefs[h_null_id] < 0.03
+
+
+def test_three_model_exhaustive_raises_not_implemented():
+    """``exhaustive_pairwise_complement`` with 3 models raises NotImplementedError.
+
+    The N-ary Exclusive operator does not yet exist in the IR; the
+    previous code silently fell back to pairwise Contradict, which is
+    at-most-one and not the requested "exactly one of N" semantics.
+    Until the N-ary operator lands, compare() must refuse loudly.
+    """
+    pkg = CollectedPackage(name="bayes_three_exhaustive_pkg", namespace="t")
+    token = _current_package.set(pkg)
+    try:
+        theta = Variable(symbol="theta", domain=Probability)
+        k = Variable(symbol="k", domain=Nat, value=4)
+        h_a = parameter(theta, 0.2, content="theta = 0.2.", prior=1 / 3, label="h_a")
+        h_b = parameter(theta, 0.5, content="theta = 0.5.", prior=1 / 3, label="h_b")
+        h_c = parameter(theta, 0.8, content="theta = 0.8.", prior=1 / 3, label="h_c")
+        data = observe(k, value=4, label="data")
+        m_a = bayes.predict(
+            h_a, target=k, distribution=Binomial("k under a", n=5, p=theta), label="m_a"
+        )
+        m_b = bayes.predict(
+            h_b, target=k, distribution=Binomial("k under b", n=5, p=theta), label="m_b"
+        )
+        m_c = bayes.predict(
+            h_c, target=k, distribution=Binomial("k under c", n=5, p=theta), label="m_c"
+        )
+        with pytest.raises(NotImplementedError, match="N-ary Exclusive"):
+            bayes.compare(
+                data,
+                models=[m_a, m_b, m_c],
+                exclusivity="exhaustive_pairwise_complement",
+                label="cmp",
+            )
+    finally:
+        _current_package.reset(token)
+
+
+def test_three_model_pairwise_contradiction_remains_supported():
+    """``pairwise_contradiction`` with 3 models is still accepted.
+
+    The N>=3 raise is specific to ``exhaustive_pairwise_complement``;
+    authors who genuinely want at-most-one semantics over 3+ models
+    (open-world comparisons) can still get there explicitly.
+    """
+    pkg = CollectedPackage(name="bayes_three_pairwise_pkg", namespace="t")
+    token = _current_package.set(pkg)
+    try:
+        theta = Variable(symbol="theta", domain=Probability)
+        k = Variable(symbol="k", domain=Nat, value=4)
+        h_a = parameter(theta, 0.2, content="theta = 0.2.", prior=1 / 3, label="h_a")
+        h_b = parameter(theta, 0.5, content="theta = 0.5.", prior=1 / 3, label="h_b")
+        h_c = parameter(theta, 0.8, content="theta = 0.8.", prior=1 / 3, label="h_c")
+        data = observe(k, value=4, label="data")
+        m_a = bayes.predict(
+            h_a, target=k, distribution=Binomial("k under a", n=5, p=theta), label="m_a"
+        )
+        m_b = bayes.predict(
+            h_b, target=k, distribution=Binomial("k under b", n=5, p=theta), label="m_b"
+        )
+        m_c = bayes.predict(
+            h_c, target=k, distribution=Binomial("k under c", n=5, p=theta), label="m_c"
+        )
+        cmp_result = bayes.compare(
+            data,
+            models=[m_a, m_b, m_c],
+            exclusivity="pairwise_contradiction",
+            label="cmp",
+        )
+    finally:
+        _current_package.reset(token)
+
+    contradict_pairs = {
+        frozenset((id(a.a), id(a.b)))
+        for a in pkg.actions
+        if isinstance(a, Contradict)
+    }
+    expected_pairs = {
+        frozenset((id(h_a), id(h_b))),
+        frozenset((id(h_a), id(h_c))),
+        frozenset((id(h_b), id(h_c))),
+    }
+    assert contradict_pairs == expected_pairs
+    assert cmp_result.metadata["comparison"]["exclusivity"] == "pairwise_contradiction"

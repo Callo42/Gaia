@@ -1,3 +1,6 @@
+# ruff: noqa: RUF002
+# Greek letters appear in scientific docstrings; keep them as-is.
+
 """Bayes ``compare`` verb — compare equal-positioned predictive models.
 
 ``compare(data, models=[m1, m2, ...])`` evaluates the log-likelihood of
@@ -11,6 +14,15 @@ clean break replaces):
 * ``model=`` + ``against=[...]`` is collapsed to a single ``models=[...]``
   list. The model the author "advocates" is no longer encoded in the
   API; it lives in Claim priors instead, where review can see it.
+* The default ``exclusivity`` is ``"exhaustive_pairwise_complement"``
+  (was ``"pairwise_contradiction"`` in the earlier alpha). The previous
+  default silently diluted Bayesian model-selection posteriors by the
+  mass that ``α=0.5`` assigned to the "all-false" joint state. The new
+  default matches the standard Bayesian model-selection contract for
+  2-model comparisons, and ``compare()`` rejects ``len(models) > 2``
+  under it until the N-ary Exclusive operator lands. See the
+  ``compare()`` docstring's "Exclusivity contracts" section for the
+  full trade-off across the three modes.
 * ``precomputed=`` accepts either the bare ``dict[Claim, float]``
   shortcut or a :class:`PrecomputedLikelihoods` Claim carrying solver
   diagnostics. NaN / +inf log-likelihoods are rejected at the entry
@@ -165,7 +177,26 @@ def _ensure_structural_actions(
 ) -> None:
     if exclusivity == "none" or len(hypotheses) < 2:
         return
-    if exclusivity == "exhaustive_pairwise_complement" and len(hypotheses) == 2:
+    if exclusivity == "exhaustive_pairwise_complement":
+        if len(hypotheses) > 2:
+            # N-ary exclusive ("exactly one of M_1..M_N is true") needs a
+            # dedicated IR primitive that we do not yet have; falling back
+            # to pairwise Contradict would silently degrade to
+            # at-most-one semantics and dilute posterior odds by the
+            # (F,F,...,F) state's probability mass. Reject loudly until
+            # the N-ary operator lands (see follow-up issue tracking
+            # this limitation).
+            raise NotImplementedError(
+                "compare(exclusivity='exhaustive_pairwise_complement') "
+                f"with {len(hypotheses)} models requires an N-ary Exclusive "
+                "operator that is not yet implemented. Either: (a) use "
+                "exclusivity='pairwise_contradiction' explicitly and "
+                "accept at-most-one semantics (posterior will be diluted "
+                "by the 'all-false' state), (b) declare your own "
+                "structural action externally and pass "
+                "exclusivity='none' to compare(), or (c) restrict the "
+                "comparison to two models."
+            )
         _auto_exclusive(hypotheses[0], hypotheses[1], label=label)
         return
     for a, b in combinations(hypotheses, 2):
@@ -286,7 +317,7 @@ def compare(
     background: list[Knowledge] | None = None,
     rationale: str = "",
     label: str | None = None,
-    exclusivity: str = "pairwise_contradiction",
+    exclusivity: str = "exhaustive_pairwise_complement",
     precomputed: dict[Claim, float] | PrecomputedLikelihoods | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> Claim:
@@ -295,6 +326,47 @@ def compare(
     Returns the comparison helper Claim. The helper carries
     ``metadata["comparison"]`` describing the exclusivity contract and,
     after compilation, the per-hypothesis log-likelihood table.
+
+    Exclusivity contracts
+    ---------------------
+    ``exclusivity`` controls what structural-action relationship Gaia
+    asserts between the compared hypotheses. **The choice of contract
+    materially changes the posterior** because it changes the set of
+    joint hypothesis states the factor graph is allowed to occupy:
+
+    * ``"exhaustive_pairwise_complement"`` (**default**, 2 models only):
+      auto-generate ``exclusive(m1, m2)`` — exactly one of the two
+      hypotheses is true. Posterior odds equal the (Cromwell-clamped)
+      likelihood ratio. This is the standard Bayesian model-selection
+      contract and the right default when the author intends "which of
+      these two competing models best explains the data".
+      Currently rejected for ``len(models) > 2`` until an N-ary
+      Exclusive operator is implemented; use ``"none"`` plus an
+      external structural declaration meanwhile.
+
+    * ``"pairwise_contradiction"`` (≥2 models): auto-generate
+      ``contradict(m_i, m_j)`` for every pair. At-most-one is true; an
+      "all false" joint state is allowed. The hardcoded ``α=0.5`` anchor
+      in each ``infer`` factor's CPT then assigns substantial mass to
+      that joint state, **diluting model-comparison posterior odds**.
+      Use this only when you genuinely believe the listed models may
+      all be wrong and want the posterior to reflect that.
+
+    * ``"none"`` (≥2 models): emit no structural action at all. Each
+      hypothesis is updated independently by its ``infer`` factor; the
+      models do not compete. Two legitimate use cases:
+
+      1. You have already declared ``exclusive(...)`` or
+         ``contradict(...)`` externally — typically with its own
+         rationale and background — and don't want ``compare()`` to
+         duplicate it. (This is what
+         :mod:`examples.mendel-v0-5-gaia` does.)
+      2. You only want the log-likelihood table (visible via
+         ``metadata["comparison"]["likelihoods"]``) and do not need
+         BP-level model-selection posteriors.
+
+      In all other cases, ``"none"`` plus ≥2 models silently produces
+      posteriors that look like Bayesian model selection but are not.
     """
     data_tuple = _as_claim_tuple(data, name="data")
     if not models:

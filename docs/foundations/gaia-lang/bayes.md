@@ -162,10 +162,22 @@ assert beliefs[h_null_id] < 0.03
 assert beliefs[comparison_id] > 0.99
 ```
 
-`exclusivity="exhaustive_pairwise_complement"` means exactly one listed
-hypothesis is true. For the default `pairwise_contradiction`, the listed
-hypotheses are only "at most one true", so pairwise odds are meaningful
-but the listed marginals need not sum to one.
+`exclusivity="exhaustive_pairwise_complement"` is the **default**
+(2-model only): exactly one listed hypothesis is true, so posterior
+marginals sum to one and the result is a standard Bayesian
+model-selection posterior. `pairwise_contradiction` is the "at most one
+true" mode; pairwise odds are still meaningful, but the marginals can
+sum to less than one because the "all-false" joint state carries
+probability mass — this is the open-world mode for incomplete model
+coverage. `"none"` skips emitting a structural action altogether and is
+only meaningful when the author has declared exclusivity externally
+(e.g. via a top-level `exclusive(...)` action with its own rationale).
+
+Currently `exhaustive_pairwise_complement` is only implemented for two
+hypotheses. With three or more hypotheses, `compare()` raises
+`NotImplementedError`; pass `exclusivity="pairwise_contradiction"`
+explicitly (at-most-one semantics) until the N-ary Exclusive operator
+lands.
 
 The realistic Mendel pipeline produces an unclamped Bayes factor of
 roughly `exp(50.3) ≈ 7×10²¹`, which the Cromwell clamp on individual

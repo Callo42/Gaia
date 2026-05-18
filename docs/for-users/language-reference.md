@@ -262,11 +262,26 @@ comparison = bayes.compare(
 
 `bayes.predict(...)` returns a predictive-model helper claim. `bayes.compare(...)`
 returns a comparison helper claim and can also emit reviewable exclusivity or
-contradiction relations among the compared hypotheses. Use
-`exclusivity="none"` when Gaia should not add any structural relation;
-`"pairwise_contradiction"` when at most one hypothesis can be true; and
-`"exhaustive_pairwise_complement"` when exactly one listed hypothesis should be
-true.
+contradiction relations among the compared hypotheses. The
+`exclusivity=` argument controls the structural contract and **changes
+the posterior** because it changes which joint hypothesis states the
+factor graph allows:
+
+* `"exhaustive_pairwise_complement"` (**default**, 2 hypotheses only) —
+  exactly one of the listed hypotheses is true. Posterior odds equal
+  the (Cromwell-clamped) likelihood ratio; this is the standard
+  Bayesian model-selection contract. With three or more hypotheses
+  `compare()` raises `NotImplementedError` until an N-ary Exclusive
+  operator lands; pass `pairwise_contradiction` explicitly for now.
+* `"pairwise_contradiction"` — at most one listed hypothesis is true.
+  Pairwise odds are meaningful, but the listed marginals can sum to
+  less than one because the "all-false" joint state carries probability
+  mass. Use this when you do not believe your model set is exhaustive.
+* `"none"` — emit no structural action at all. Only meaningful when
+  exclusivity is already declared externally (e.g. a top-level
+  `exclusive(...)` action with its own rationale); otherwise each
+  hypothesis is updated independently against a hardcoded `α=0.5`
+  baseline, which is **not** Bayesian model selection.
 
 The example leaves the two hypotheses without external priors. Gaia then uses
 the maximum-entropy starting point subject to the declared exclusivity relation.

@@ -4,8 +4,14 @@
 
 - `predict(hypothesis, target=..., distribution=...)` — declare a
   predictive distribution for one hypothesis.
-- `compare(data, models=[...])` — compare equal-positioned predictive
-  models against observation data.
+- `compare(data, models=[...], exclusivity=...)` — compare
+  equal-positioned predictive models against observation data. The
+  default `exclusivity` is `"exhaustive_pairwise_complement"` — the
+  standard Bayesian model-selection contract for two hypotheses — and
+  is currently restricted to 2 hypotheses pending an N-ary Exclusive
+  operator. See the `compare()` docstring for the trade-off across
+  `"exhaustive_pairwise_complement"`, `"pairwise_contradiction"`, and
+  `"none"`.
 - `PrecomputedLikelihoods` — audit-bearing Claim subclass for plugging
   external-solver output (PyMC / Stan / NumPyro / scipy quadrature /
   custom MCMC) into `compare(precomputed=...)`.

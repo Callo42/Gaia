@@ -251,7 +251,7 @@ def compare(
     data: Claim | tuple[Claim, ...] | list[Claim],
     *,
     models: list[Claim] | tuple[Claim, ...],
-    exclusivity: str = "pairwise_contradiction",
+    exclusivity: str = "exhaustive_pairwise_complement",
     background: list[Knowledge] | None = None,
     rationale: str = "",
     label: str | None = None,
@@ -266,6 +266,9 @@ Differences from the legacy `bayes.likelihood` it replaces:
 - `model=` + `against=[...]` becomes a single `models=[...]` list. The first-position "advocated" model is no longer privileged — all hypotheses are equal. (Authorial preference is recorded via Claim prior, not API asymmetry.)
 - `precomputed=` accepts either a `dict[Claim, float]` (back-of-the-envelope escape hatch) or a `PrecomputedLikelihoods` Claim (§4).
 - Returns the comparison helper Claim, with `metadata["comparison"]` carrying the likelihood table and exclusivity contract.
+- **Default exclusivity is `"exhaustive_pairwise_complement"`**, not `"pairwise_contradiction"`. The earlier default silently diluted Bayesian model-selection posteriors by the probability mass that the hardcoded `α=0.5` `infer`-factor anchor assigned to the "all-false" joint state — for the canonical Mendel 1000:1 likelihood ratio the posterior settled at ~0.667 instead of ~0.999. The new default matches strict Bayesian model selection for the 2-hypothesis case.
+  - For 3+ hypotheses, `exhaustive_pairwise_complement` currently raises `NotImplementedError` (the N-ary Exclusive operator is a follow-up — see §10). Authors comparing more than two models must pass `exclusivity="pairwise_contradiction"` explicitly (at-most-one semantics; the posterior is no longer a strict normalised model-selection result) or declare an external structural action and pass `exclusivity="none"`.
+  - `exclusivity="none"` is preserved (and used by the canonical Mendel example package, which declares `exclusive(mendelian_segregation_model, blending_inheritance_model)` separately with its own rationale). The verb docstring warns that without an external declaration `"none"` collapses to "each hypothesis updated independently against a hardcoded α=0.5 baseline" — not model comparison.
 
 ### 3.4 Action class names
 
@@ -671,4 +674,29 @@ These four points are listed as the spec's authoritative defaults. PR review can
       - scripts/demo_v06_pymc_integration.py (real PyMC SMC; not in CI, no PyMC dependency)
 [x] Documentation regenerated (foundations/gaia-lang/bayes.md)
 [x] Wrapper pattern §4.4 surfaced in foundations docs
+[x] compare() default exclusivity flipped to exhaustive_pairwise_complement
+    (was pairwise_contradiction; the old default silently diluted
+    Bayes-factor posteriors via α=0.5 mass on the "all-false" state)
+[x] compare() with 3+ models + exhaustive_pairwise_complement raises
+    NotImplementedError until the N-ary Exclusive operator lands
 ```
+
+### 10.1 Follow-up issues
+
+* **N-ary Exclusive operator.** Required to make
+  `exclusivity="exhaustive_pairwise_complement"` work for 3+
+  hypothesis comparisons. The current implementation raises
+  `NotImplementedError` in that case rather than silently degrading to
+  pairwise `Contradict` (at-most-one), which would dilute the
+  posterior by the all-false joint state's mass. The fix needs a new
+  IR `Operator` (or a generalisation of the existing `Exclusive`) and
+  the corresponding BP factor-graph encoding for "exactly one of N is
+  true".
+* **`bayes:comparison-no-external-exclusivity` check rule.** When
+  `compare()` is called with `exclusivity="none"` and ≥2 models, the
+  package should contain matching external `exclusive(...)` /
+  `contradict(...)` actions over every pair of compared hypotheses. A
+  `gaia build check` diagnostic would surface orphaned `"none"`
+  usages whose posterior collapses to "each hypothesis updated
+  independently against a hardcoded α=0.5 baseline" — not what
+  `compare()` connotes.
