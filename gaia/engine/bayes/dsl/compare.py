@@ -108,10 +108,8 @@ def _label_part(claim: Claim) -> str:
     return normalized
 
 
-def _existing_pair_relation(
-    a: Claim, b: Claim
-) -> Exclusive | Contradict | None:
-    """Return any existing ``Exclusive`` or ``Contradict`` over (a, b).
+def _existing_pair_relations(a: Claim, b: Claim) -> tuple[Exclusive | Contradict, ...]:
+    """Return existing ``Exclusive`` / ``Contradict`` actions over (a, b).
 
     Looks at the active package the same way action registration does:
     first the ContextVar-bound ``_current_package``, then — if unset —
@@ -126,15 +124,14 @@ def _existing_pair_relation(
     if pkg is None:
         pkg = infer_package_from_callstack()
     if pkg is None:
-        return None
+        return ()
     pair = {id(a), id(b)}
-    for action in pkg.actions:
-        if (
-            isinstance(action, (Exclusive, Contradict))
-            and {id(action.a), id(action.b)} == pair
-        ):
-            return action
-    return None
+    return tuple(
+        action
+        for action in pkg.actions
+        if isinstance(action, (Exclusive, Contradict))
+        and {id(action.a), id(action.b)} == pair
+    )
 
 
 def _auto_structural_label(base: str | None, relation: str, a: Claim, b: Claim) -> str:
@@ -204,7 +201,7 @@ def _auto_exclusive(a: Claim, b: Claim, *, label: str | None) -> None:
     rule) are the authority on whether the combined factor graph is
     legal.
     """
-    if isinstance(_existing_pair_relation(a, b), Exclusive):
+    if any(isinstance(action, Exclusive) for action in _existing_pair_relations(a, b)):
         return
     _emit_exclusive(a, b, label=label)
 
@@ -216,7 +213,7 @@ def _auto_contradict(a: Claim, b: Claim, *, label: str | None) -> None:
     cross-type coexistence is left to the IR's own consistency
     machinery.
     """
-    if isinstance(_existing_pair_relation(a, b), Contradict):
+    if any(isinstance(action, Contradict) for action in _existing_pair_relations(a, b)):
         return
     _emit_contradict(a, b, label=label)
 

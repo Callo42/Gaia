@@ -33,7 +33,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from gaia.engine.bayes.distributions.base import _is_deferred_reference
-from gaia.engine.bayes.runtime import ModelComparison, Prediction
+from gaia.engine.bayes.runtime import ModelComparison, PrecomputedLikelihoods, Prediction
 from gaia.engine.bp.factor_graph import CROMWELL_EPS
 from gaia.engine.ir import Knowledge as IrKnowledge
 from gaia.engine.ir import Operator as IrOperator
@@ -225,16 +225,20 @@ def _lower_comparison(
             "predictive distribution support, or use precomputed likelihoods."
         )
 
+    comparison_metadata = {
+        "kind": "comparison",
+        "exclusivity": action.exclusivity,
+        "likelihoods": {knowledge_map[id(h)]: value for h, value in likelihoods.items()},
+        "data": data_ids,
+        "models": model_ids,
+        "hypotheses": [knowledge_map[id(h)] for h in hypotheses],
+    }
+    if isinstance(action.precomputed, PrecomputedLikelihoods):
+        comparison_metadata["precomputed_source"] = knowledge_map[id(action.precomputed)]
+
     metadata_updates = {
         cmp_id: {
-            "comparison": {
-                "kind": "comparison",
-                "exclusivity": action.exclusivity,
-                "likelihoods": {knowledge_map[id(h)]: value for h, value in likelihoods.items()},
-                "data": data_ids,
-                "models": model_ids,
-                "hypotheses": [knowledge_map[id(h)] for h in hypotheses],
-            }
+            "comparison": comparison_metadata,
         }
     }
 
@@ -406,14 +410,16 @@ def _observation_value(data_claim: Claim, target: Variable | Distribution) -> An
         )
     observed_target = observation.get("target")
     if observed_target is not target:
-        # Fall back to symbol match for Variables, content+kind match for Distributions
+        # Fall back to symbol match for Variables only. Distribution targets
+        # are Knowledge objects and must match by identity so observations
+        # for one measured quantity cannot silently feed another.
         if isinstance(target, Variable) and isinstance(observed_target, Variable):
             if observed_target.symbol != target.symbol:
                 raise ValueError(
                     f"compare() data target {observed_target!r} does not match "
                     f"prediction target {target!r}"
                 )
-        elif observed_target is None or not isinstance(observed_target, type(target)):
+        else:
             raise ValueError(
                 f"compare() data {data_claim.label or data_claim.content!r} target "
                 f"{observed_target!r} does not match prediction target {target!r}"

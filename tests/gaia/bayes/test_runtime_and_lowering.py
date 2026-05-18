@@ -732,6 +732,44 @@ def test_compare_dedups_against_external_exclusive():
     compile_package_artifact(pkg)
 
 
+def test_compare_dedups_external_exclusive_even_after_contradict():
+    """Same-type dedup must not depend on the order of cross-type relations.
+
+    Authors may first declare an at-most-one relation, then refine it to a
+    closed binary partition. ``compare()`` must still reuse the external
+    Exclusive instead of creating a second complement helper.
+    """
+    from gaia.engine.lang.dsl.relate import exclusive
+
+    pkg = CollectedPackage(name="bayes_external_exclusive_after_contradict_pkg", namespace="t")
+    token = _current_package.set(pkg)
+    try:
+        theta = Variable(symbol="theta", domain=Probability)
+        k = Variable(symbol="k", domain=Nat, value=4)
+        h1 = parameter(theta, 0.3, content="theta = 0.3.", prior=0.5, label="h1")
+        h2 = parameter(theta, 0.7, content="theta = 0.7.", prior=0.5, label="h2")
+        manual_conflict = contradict(h1, h2, rationale="manual", label="manual_conflict")
+        competing = exclusive(h1, h2, rationale="external rationale", label="competing")
+        data = observe(k, value=4, label="data")
+        m1 = bayes.predict(
+            h1, target=k, distribution=Binomial("k under h1", n=5, p=theta), label="m1"
+        )
+        m2 = bayes.predict(
+            h2, target=k, distribution=Binomial("k under h2", n=5, p=theta), label="m2"
+        )
+        bayes.compare(data, models=[m1, m2], label="cmp")
+    finally:
+        _current_package.reset(token)
+
+    exclusives = [a for a in pkg.actions if isinstance(a, Exclusive)]
+    contradicts = [a for a in pkg.actions if isinstance(a, Contradict)]
+    assert len(exclusives) == 1, "dedup should reuse the external Exclusive"
+    assert exclusives[0].helper is competing
+    assert manual_conflict in (a.helper for a in contradicts)
+    compiled = compile_package_artifact(pkg)
+    lower_local_graph(compiled.graph)
+
+
 def test_compare_dedups_through_callstack_inferred_package():
     """Dedup works even when ``_current_package`` is unset.
 

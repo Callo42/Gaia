@@ -276,6 +276,9 @@ def test_precomputed_claim_carries_solver_diagnostics_through_compile():
     # rules and gaia explain can render them next to the comparison they fed.
     assert pre_node.metadata.get("solver") == "scipy-integrate-quad"
     assert pre_node.metadata.get("kind") == "precomputed_likelihoods"
+    cmp_id = compiled.knowledge_ids_by_object[id(_cmp_result)]
+    cmp_node = next(k for k in compiled.graph.knowledges if k.id == cmp_id)
+    assert cmp_node.metadata["comparison"]["precomputed_source"] == pre_id
 
 
 def test_predict_target_distribution_flows_through_compare():
@@ -333,6 +336,43 @@ def test_predict_target_distribution_flows_through_compare():
     # Direction: y=0.2 is much closer to mu=0 than mu=2, so the near
     # hypothesis must have higher log-likelihood than the far one.
     assert likelihoods[h_near_id] > likelihoods[h_far_id]
+
+
+def test_predict_target_distribution_rejects_different_observed_distribution():
+    """Distribution-target compare must not accept a same-class but different target."""
+    import pytest
+
+    import gaia.engine.bayes as bayes
+    from gaia.engine.lang import Normal as LangNormal
+    from gaia.engine.lang import Real
+
+    pkg = CollectedPackage(name="dist_target_mismatch", namespace="t")
+    token = _current_package.set(pkg)
+    try:
+        mu = Variable(symbol="mu", domain=Real)
+        expected_y = LangNormal("expected y", mu=0.0, sigma=1.0, label="expected_y")
+        other_y = LangNormal("other y", mu=10.0, sigma=1.0, label="other_y")
+        h_near = parameter(mu, 0.0, content="mu = 0.", prior=0.5, label="h_near")
+        h_far = parameter(mu, 2.0, content="mu = 2.", prior=0.5, label="h_far")
+        data = observe(other_y, value=0.2, error=0.1, label="data_other")
+        model_near = bayes.predict(
+            h_near,
+            target=expected_y,
+            distribution=LangNormal("y under near", mu=mu, sigma=1.0),
+            label="model_near",
+        )
+        model_far = bayes.predict(
+            h_far,
+            target=expected_y,
+            distribution=LangNormal("y under far", mu=mu, sigma=1.0),
+            label="model_far",
+        )
+        bayes.compare(data, models=[model_near, model_far], label="cmp")
+    finally:
+        _current_package.reset(token)
+
+    with pytest.raises(ValueError, match="does not match prediction target"):
+        compile_package_artifact(pkg)
 
 
 def test_compare_rejects_nan_precomputed_log_likelihood():
