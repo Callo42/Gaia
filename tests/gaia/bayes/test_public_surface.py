@@ -26,20 +26,49 @@ def cleanup_bayes_modules() -> Generator[None, None, None]:
 
 def test_bayes_canonical_peer_module_imports() -> None:
     import gaia.engine.bayes as bayes
-    from gaia.engine.bayes import data, likelihood, model
-    from gaia.engine.bayes.dsl import data as dsl_data
-    from gaia.engine.bayes.dsl import likelihood as dsl_likelihood
+    from gaia.engine.bayes import (
+        BayesInference,
+        Model,
+        ModelCompare,
+        PrecomputedLikelihoods,
+        compare,
+        model,
+    )
+    from gaia.engine.bayes.dsl import compare as dsl_compare
     from gaia.engine.bayes.dsl import model as dsl_model
-    from gaia.engine.bayes.runtime import BayesInference, Likelihood, PredictiveModel
     from gaia.engine.lang.runtime.action import Reasoning
 
-    assert data is dsl_data
     assert model is dsl_model
-    assert likelihood is dsl_likelihood
-    assert "data" in bayes.__all__
+    assert compare is dsl_compare
+    assert "model" in bayes.__all__
+    assert "compare" in bayes.__all__
+    assert "PrecomputedLikelihoods" in bayes.__all__
     assert issubclass(BayesInference, Reasoning)
-    assert issubclass(PredictiveModel, BayesInference)
-    assert issubclass(Likelihood, BayesInference)
+    assert issubclass(Model, BayesInference)
+    assert issubclass(ModelCompare, BayesInference)
+    assert PrecomputedLikelihoods is bayes.PrecomputedLikelihoods
+    # The legacy verbs / Action classes are gone from the public surface.
+    for removed in ("predict", "data", "likelihood"):
+        assert not hasattr(bayes, removed)
+    legacy_prediction_action = "Pred" + "iction"
+    for removed in (legacy_prediction_action, "PredictiveModel", "Likelihood", "ModelComparison"):
+        assert not hasattr(bayes, removed)
+
+
+def test_typed_value_distribution_aliases_removed_from_top_level_bayes() -> None:
+    """Clean-break: gaia.engine.bayes no longer re-exports typed-value distributions.
+
+    All distribution factories live at :mod:`gaia.engine.lang`; the
+    pydantic backends are still reachable internally at
+    :mod:`gaia.engine.bayes.distributions` but are not part of the
+    authoring surface.
+    """
+    import gaia.engine.bayes as bayes
+
+    for removed in ("Normal", "Binomial", "BetaBinomial", "Beta", "Poisson", "Cauchy"):
+        assert not hasattr(bayes, removed), (
+            f"gaia.engine.bayes.{removed} should be gone; use gaia.engine.lang.{removed}"
+        )
 
 
 def test_lang_bayes_shortcut_is_removed_before_v0_5_release() -> None:

@@ -1,4 +1,4 @@
-"""CLI E2E tests for ``gaia bayes model`` + ``gaia bayes likelihood``."""
+"""CLI E2E tests for ``gaia bayes model`` + ``gaia bayes compare``."""
 
 from __future__ import annotations
 
@@ -27,7 +27,9 @@ def _parse(output: str) -> dict[str, object]:
 def _seed_distribution(bayes_package: BayesPackage) -> None:
     """Append a Binomial distribution binding to the fixture."""
     existing = bayes_package.source_init.read_text()
-    bayes_package.source_init.write_text(existing + "\nshared_dist = bayes.Binomial(n=10, p=0.5)\n")
+    bayes_package.source_init.write_text(
+        existing + "\nshared_dist = Binomial('shared_dist', n=10, p=0.5)\n"
+    )
 
 
 def test_model_happy_path(bayes_package: BayesPackage) -> None:
@@ -86,8 +88,8 @@ def test_model_rejects_unresolved_observable(bayes_package: BayesPackage) -> Non
     assert diagnostics[0]["kind"] == "prewrite.reference_unresolved"
 
 
-def test_likelihood_happy_path(bayes_package: BayesPackage) -> None:
-    """`bayes likelihood` references two models + data observation."""
+def test_compare_happy_path(bayes_package: BayesPackage) -> None:
+    """`bayes compare` references two models + data observation."""
     _seed_distribution(bayes_package)
     # Seed two models + a data claim so the references resolve.
     runner.invoke(
@@ -143,15 +145,13 @@ def test_likelihood_happy_path(bayes_package: BayesPackage) -> None:
         app,
         [
             "bayes",
-            "likelihood",
+            "compare",
             "--data",
             "data_obs",
             "--model",
             "model_a",
             "--against",
             "model_b",
-            "--exclusivity",
-            "none",
             "--label",
             "comparison",
             "--target",
@@ -161,19 +161,39 @@ def test_likelihood_happy_path(bayes_package: BayesPackage) -> None:
     )
     assert result.exit_code == 0, result.output
     text = bayes_package.source_init.read_text()
-    assert "comparison = bayes.likelihood(data_obs" in text
-    assert "model=model_a" in text
-    assert "against=[model_b]" in text
-    assert "exclusivity='none'" in text
+    assert "comparison = bayes.compare(data_obs" in text
+    assert "models=[model_a, model_b]" in text
 
 
-def test_likelihood_invalid_exclusivity(bayes_package: BayesPackage) -> None:
+def test_compare_rejects_missing_against(bayes_package: BayesPackage) -> None:
+    """`bayes compare` requires an actual second model."""
+    result = runner.invoke(
+        app,
+        [
+            "bayes",
+            "compare",
+            "--data",
+            "hypothesis_a",
+            "--model",
+            "hypothesis_b",
+            "--label",
+            "bad_comparison",
+            "--target",
+            str(bayes_package.root),
+            "--no-check",
+        ],
+    )
+    assert result.exit_code == 2
+    assert "--against must list at least one alternative model" in result.output
+
+
+def test_compare_invalid_exclusivity(bayes_package: BayesPackage) -> None:
     """Bad --exclusivity value is rejected."""
     result = runner.invoke(
         app,
         [
             "bayes",
-            "likelihood",
+            "compare",
             "--data",
             "hypothesis_a",
             "--model",
@@ -191,13 +211,12 @@ def test_likelihood_invalid_exclusivity(bayes_package: BayesPackage) -> None:
 
 
 def test_model_accepts_inline_distribution(bayes_package: BayesPackage) -> None:
-    """`--distribution 'bayes.Binomial(n=395, p=3/4)'` emits inline.
+    """`--distribution 'Binomial("...", n=395, p=3/4)'` emits inline.
 
-    Hand-authored mendel inlines ``bayes.Binomial(...)`` directly
+    Hand-authored mendel inlines ``Binomial(...)`` directly
     inside ``bayes.model(distribution=...)``. The cli mirrors that
     shape: when ``--distribution`` is not a bare identifier, route
-    through the formula sandbox (which whitelists
-    ``bayes.<DistributionFactory>``) and emit verbatim.
+    through the formula sandbox and emit verbatim.
     """
     result = runner.invoke(
         app,
@@ -209,7 +228,7 @@ def test_model_accepts_inline_distribution(bayes_package: BayesPackage) -> None:
             "--observable",
             "observable_x",
             "--distribution",
-            "bayes.Binomial(n=395, p=3/4)",
+            "Binomial('inline count model', n=395, p=3/4)",
             "--label",
             "inline_model",
             "--target",
@@ -220,7 +239,38 @@ def test_model_accepts_inline_distribution(bayes_package: BayesPackage) -> None:
     assert result.exit_code == 0, result.output
     text = bayes_package.source_init.read_text()
     assert "inline_model = bayes.model(hypothesis_a" in text
-    assert "distribution=bayes.Binomial(n=395, p=3/4)" in text
+    assert "distribution=Binomial('inline count model', n=395, p=3/4)" in text
+
+
+def test_model_inline_distribution_imports_factory_when_missing(
+    bayes_package: BayesPackage,
+) -> None:
+    """Inline Distribution factories are auto-imported into narrow scaffold files."""
+    bayes_package.source_init.write_text(
+        bayes_package.source_init.read_text().replace("    Binomial,\n", "")
+    )
+    result = runner.invoke(
+        app,
+        [
+            "bayes",
+            "model",
+            "--hypothesis",
+            "hypothesis_a",
+            "--observable",
+            "observable_x",
+            "--distribution",
+            "Binomial('inline count model', n=395, p=3/4)",
+            "--label",
+            "inline_model",
+            "--target",
+            str(bayes_package.root),
+            "--no-check",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    text = bayes_package.source_init.read_text()
+    assert "    Binomial,\n" in text
+    assert "distribution=Binomial('inline count model', n=395, p=3/4)" in text
 
 
 def test_model_accepts_inline_beta_binomial(bayes_package: BayesPackage) -> None:
@@ -235,7 +285,7 @@ def test_model_accepts_inline_beta_binomial(bayes_package: BayesPackage) -> None
             "--observable",
             "observable_x",
             "--distribution",
-            "bayes.BetaBinomial(n=395, alpha=1.0, beta=1.0)",
+            "BetaBinomial('inline diffuse count model', n=395, alpha=1.0, beta=1.0)",
             "--label",
             "inline_bb",
             "--target",
@@ -245,7 +295,10 @@ def test_model_accepts_inline_beta_binomial(bayes_package: BayesPackage) -> None
     )
     assert result.exit_code == 0, result.output
     text = bayes_package.source_init.read_text()
-    assert "distribution=bayes.BetaBinomial(n=395, alpha=1.0, beta=1.0)" in text
+    assert (
+        "distribution=BetaBinomial('inline diffuse count model', n=395, alpha=1.0, beta=1.0)"
+        in text
+    )
 
 
 def test_model_inline_distribution_rejects_attribute_breakout(

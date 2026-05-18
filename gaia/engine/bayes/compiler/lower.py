@@ -1,4 +1,29 @@
-"""Lower Bayes runtime actions into existing Gaia IR strategies/operators."""
+"""Bayes lowering - ``Model`` / ``ModelCompare`` -> Gaia IR.
+
+Dispatches on :class:`Model` and :class:`ModelCompare` (the Actions
+produced by :func:`model` and :func:`compare`), and reads the unified
+``metadata["observation"]`` / ``metadata["model"]`` schema.
+
+What this module owns:
+
+* Helper Claims compiled from ``Model`` actions get their
+  ``metadata["model"]`` finalised with the IR-side reference shape
+  (knowledge IDs in place of runtime object references).
+* ``ModelCompare`` actions emit one ``infer`` strategy per hypothesis
+  whose CPT is ``[0.5, clamp(LR_i)]`` with ``LR_i = exp(logL_i - logL_max)``.
+* Supported exclusivity contracts ("pairwise_contradiction" /
+  "exhaustive_pairwise_complement") emit Structural Actions. The
+  earlier "none" escape hatch is rejected by the DSL.
+
+What this module does NOT own:
+
+* Reading observation value or noise out of ``claim.formula`` — value and
+  noise live exclusively in ``metadata["observation"]``.
+* Any compatibility shim for an earlier in-flight Bayes surface. The
+  legacy ``bayes.likelihood`` / ``bayes.data`` verbs, old model metadata
+  shape, and typed-value ``bayes.Normal`` aliases were removed in the
+  unified-design clean break.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +33,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from gaia.engine.bayes.distributions.base import _is_deferred_reference
-from gaia.engine.bayes.runtime import Likelihood, PredictiveModel
+from gaia.engine.bayes.runtime import Model, ModelCompare, PrecomputedLikelihoods
 from gaia.engine.bp.factor_graph import CROMWELL_EPS
 from gaia.engine.ir import Knowledge as IrKnowledge
 from gaia.engine.ir import Operator as IrOperator
@@ -18,13 +43,14 @@ from gaia.engine.ir.operator import OperatorType
 from gaia.engine.ir.strategy import StrategyType
 from gaia.engine.lang.formula.connective import Land
 from gaia.engine.lang.formula.predicate import Equals
+from gaia.engine.lang.formula.primitives import PrimitiveType
 from gaia.engine.lang.formula.term import Constant
-from gaia.engine.lang.runtime import Claim, Knowledge, Variable
+from gaia.engine.lang.runtime import Claim, Distribution, Domain, Knowledge, Variable
 
 
 @dataclass(frozen=True)
 class BayesLoweringResult:
-    """IR additions and metadata updates emitted by Bayes action lowering."""
+    """IR additions and metadata updates emitted by Bayes lowering."""
 
     knowledges: list[IrKnowledge] = field(default_factory=list)
     operators: list[IrOperator] = field(default_factory=list)
@@ -32,6 +58,11 @@ class BayesLoweringResult:
     metadata_updates: dict[str, dict[str, Any]] = field(default_factory=dict)
     action_label_map: dict[str, str] = field(default_factory=dict)
     target_action_labels_by_id: dict[str, str] = field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# Top-level dispatch
+# ---------------------------------------------------------------------------
 
 
 def lower_bayes_claims(
@@ -44,7 +75,7 @@ def lower_bayes_claims(
     action_labels_by_object: dict[int, str] | None = None,
     existing_operators: list[IrOperator] | None = None,
 ) -> BayesLoweringResult:
-    """Lower Bayes predictive-model and likelihood actions into Gaia IR records."""
+    """Lower ``Model`` and ``ModelCompare`` actions to IR."""
     del knowledge_nodes
     knowledges: list[IrKnowledge] = []
     operators: list[IrOperator] = []
@@ -55,12 +86,13 @@ def lower_bayes_claims(
     existing_relations = _existing_relations(existing_operators or [])
     labels_by_object = action_labels_by_object or {}
 
+    # Phase 1: settle model helper metadata with IR-side references.
     for action in actions:
-        if not isinstance(action, PredictiveModel):
+        if not isinstance(action, Model):
             continue
         action_label = labels_by_object.get(id(action))
         helper_id = knowledge_map[id(action.helper)]
-        metadata_updates[helper_id] = _prediction_metadata(
+        metadata_updates[helper_id] = _model_metadata(
             action,
             knowledge_map,
             action_label=action_label,
@@ -69,11 +101,12 @@ def lower_bayes_claims(
             action_label_map[action_label] = helper_id
             target_action_labels_by_id[helper_id] = action_label
 
+    # Phase 2: lower model-comparison actions into infer strategies.
     for action in actions:
-        if not isinstance(action, Likelihood):
+        if not isinstance(action, ModelCompare):
             continue
         action_label = labels_by_object.get(id(action))
-        lowered = _lower_likelihood(
+        lowered = _lower_comparison(
             action,
             namespace=namespace,
             package_name=package_name,
@@ -99,53 +132,73 @@ def lower_bayes_claims(
     )
 
 
-def _prediction_metadata(
-    action: PredictiveModel,
+# ---------------------------------------------------------------------------
+# Model metadata
+# ---------------------------------------------------------------------------
+
+
+def _model_metadata(
+    action: Model,
     knowledge_map: dict[int, str],
     *,
     action_label: str | None,
 ) -> dict[str, Any]:
     if action.hypothesis is None or action.observable is None or action.distribution is None:
-        raise ValueError(
-            "Bayes PredictiveModel action requires hypothesis, observable, distribution"
-        )
-    bayes = {
-        "role": "prediction",
+        raise ValueError("Bayes Model action requires hypothesis, observable, distribution")
+    payload = {
+        "kind": "model",
         "distribution": action.distribution.model_dump(),
         "hypothesis": knowledge_map[id(action.hypothesis)],
         "hypotheses": [knowledge_map[id(action.hypothesis)]],
-        "observable": _variable_descriptor(action.observable),
+        "observable": _observable_descriptor(action.observable),
     }
-    payload: dict[str, Any] = {"bayes": bayes}
+    metadata: dict[str, Any] = {"model": payload}
     if action_label:
-        payload["review_target"] = {"action_label": action_label, "pattern": "prediction"}
-    return payload
+        metadata["review_target"] = {"action_label": action_label, "pattern": "model"}
+    return metadata
 
 
-def _model_action(helper: Claim) -> PredictiveModel:
-    for action in helper.from_actions:
-        if isinstance(action, PredictiveModel) and action.helper is helper:
-            return action
-    raise ValueError(f"{helper.label or helper.content!r} is not a bayes.model() helper")
+def _observable_descriptor(observable: Variable) -> dict[str, Any]:
+    domain = getattr(observable.domain, "name", None) or getattr(observable.domain, "label", None)
+    descriptor: dict[str, Any] = {
+        "kind": "variable",
+        "symbol": observable.symbol,
+        "domain": domain,
+        "unit": observable.unit,
+    }
+    if isinstance(observable.domain, Domain):
+        descriptor["domain_content"] = observable.domain.content
+        descriptor["domain_members"] = list(observable.domain.members)
+    return descriptor
 
 
-def _likelihood_model_actions(action: Likelihood) -> tuple[PredictiveModel, ...]:
-    if action.model is None:
-        raise ValueError("Bayes Likelihood action requires model")
-    return (_model_action(action.model), *(_model_action(helper) for helper in action.against))
+# ---------------------------------------------------------------------------
+# ModelCompare → IR strategies
+# ---------------------------------------------------------------------------
 
 
-def _model_hypotheses(action: Likelihood) -> tuple[Claim, ...]:
-    hypotheses = tuple(
-        model_action.hypothesis for model_action in _likelihood_model_actions(action)
-    )
-    if any(hypothesis is None for hypothesis in hypotheses):
-        raise ValueError("Bayes PredictiveModel action is missing a hypothesis")
-    return tuple(hypothesis for hypothesis in hypotheses if hypothesis is not None)
+def _model_action(helper: Claim) -> Model:
+    for candidate in helper.from_actions:
+        if isinstance(candidate, Model) and candidate.helper is helper:
+            return candidate
+    raise ValueError(f"{helper.label or helper.content!r} is not a model() helper")
 
 
-def _lower_likelihood(
-    action: Likelihood,
+def _comparison_model_actions(action: ModelCompare) -> tuple[Model, ...]:
+    if not action.models:
+        raise ValueError("Bayes ModelCompare action requires models")
+    return tuple(_model_action(helper) for helper in action.models)
+
+
+def _comparison_hypotheses(action: ModelCompare) -> tuple[Claim, ...]:
+    hypotheses = tuple(model.hypothesis for model in _comparison_model_actions(action))
+    if any(h is None for h in hypotheses):
+        raise ValueError("model() action is missing its hypothesis")
+    return tuple(h for h in hypotheses if h is not None)
+
+
+def _lower_comparison(
+    action: ModelCompare,
     *,
     namespace: str,
     package_name: str,
@@ -153,34 +206,37 @@ def _lower_likelihood(
     action_label: str | None,
     existing_relations: set[tuple[str, frozenset[str]]],
 ) -> BayesLoweringResult:
-    if action.helper is None or action.model is None:
-        raise ValueError("Bayes Likelihood action requires helper and model")
+    if action.helper is None:
+        raise ValueError("Bayes ModelCompare action requires helper")
     cmp_id = knowledge_map[id(action.helper)]
-    model_id = knowledge_map[id(action.model)]
-    against_ids = [knowledge_map[id(model)] for model in action.against]
+    model_ids = [knowledge_map[id(m)] for m in action.models]
     data_ids = [knowledge_map[id(d)] for d in action.data]
-    model_actions = _likelihood_model_actions(action)
-    hypotheses = _model_hypotheses(action)
+    model_actions = _comparison_model_actions(action)
+    hypotheses = _comparison_hypotheses(action)
+
     likelihoods = _likelihoods(action, model_actions)
     action.log_likelihoods = dict(likelihoods)
     if not any(math.isfinite(value) for value in likelihoods.values()):
         raise ValueError(
-            f"BayesLikelihoodError: likelihood {action.label or action.helper.content!r} has zero "
+            f"BayesCompareError: comparison {action.label or action.helper.content!r} has zero "
             "support under every hypothesis. Fix: check the observation value, the "
             "predictive distribution support, or use precomputed likelihoods."
         )
 
+    comparison_metadata = {
+        "kind": "comparison",
+        "exclusivity": action.exclusivity,
+        "likelihoods": {knowledge_map[id(h)]: value for h, value in likelihoods.items()},
+        "data": data_ids,
+        "models": model_ids,
+        "hypotheses": [knowledge_map[id(h)] for h in hypotheses],
+    }
+    if isinstance(action.precomputed, PrecomputedLikelihoods):
+        comparison_metadata["precomputed_source"] = knowledge_map[id(action.precomputed)]
+
     metadata_updates = {
         cmp_id: {
-            "bayes": {
-                "role": "comparison",
-                "exclusivity": action.exclusivity,
-                "likelihoods": {knowledge_map[id(h)]: value for h, value in likelihoods.items()},
-                "data": data_ids,
-                "model": model_id,
-                "against": against_ids,
-                "hypotheses": [knowledge_map[id(h)] for h in hypotheses],
-            }
+            "comparison": comparison_metadata,
         }
     }
 
@@ -193,8 +249,8 @@ def _lower_likelihood(
         h_id = knowledge_map[id(hypothesis)]
         metadata: dict[str, Any] = {
             "pattern": "inference",
-            "bayes": {
-                "role": "likelihood_factor",
+            "comparison_factor": {
+                "kind": "comparison_factor",
                 "comparison": cmp_id,
                 "hypothesis": h_id,
                 "log_likelihood": log_likelihood,
@@ -233,30 +289,25 @@ def _lower_likelihood(
     )
 
 
+# ---------------------------------------------------------------------------
+# Likelihood evaluation
+# ---------------------------------------------------------------------------
+
+
 def _likelihoods(
-    action: Likelihood,
-    model_actions: tuple[PredictiveModel, ...],
+    action: ModelCompare,
+    model_actions: tuple[Model, ...],
 ) -> dict[Claim, float]:
-    if action.precomputed is not None:
-        hypotheses = {
-            model_action.hypothesis
-            for model_action in model_actions
-            if model_action.hypothesis is not None
-        }
-        for key in action.precomputed:
-            if not isinstance(key, Claim) or key not in hypotheses:
-                raise ValueError("precomputed likelihood keys must be original hypothesis Claims")
-        provided = set(action.precomputed)
-        if provided != hypotheses:
-            missing = sorted(claim.label or claim.content for claim in hypotheses - provided)
-            details = []
-            if missing:
-                details.append(f"missing {missing}")
-            suffix = f": {', '.join(details)}" if details else ""
-            raise ValueError(
-                "precomputed likelihoods must cover exactly the model hypotheses" + suffix
-            )
-        return {hypothesis: float(value) for hypothesis, value in action.precomputed.items()}
+    if action.precomputed is not None and action.log_likelihoods:
+        # The DSL verb already validated and stored these; just hand them back
+        # in the iteration order matching model_actions.
+        out: dict[Claim, float] = {}
+        for model_action in model_actions:
+            if model_action.hypothesis is None:
+                raise ValueError("Bayes Model action is missing its hypothesis")
+            out[model_action.hypothesis] = float(action.log_likelihoods[model_action.hypothesis])
+        return out
+
     likelihoods: dict[Claim, float] = {}
     for model_action in model_actions:
         if (
@@ -264,21 +315,28 @@ def _likelihoods(
             or model_action.distribution is None
             or model_action.observable is None
         ):
-            raise ValueError("Bayes PredictiveModel action is incomplete")
+            raise ValueError("Bayes Model action is incomplete")
         hypothesis = model_action.hypothesis
-        distribution = _bind_distribution(model_action.distribution, hypothesis)
+        distribution_impl = _bind_distribution_impl(model_action.distribution, hypothesis)
         total = 0.0
         for data_claim in action.data:
             value = _observation_value(data_claim, model_action.observable)
-            total += _log_likelihood(distribution, value, data_claim)
+            noise = _observation_noise(data_claim)
+            total += _log_likelihood(distribution_impl, value, noise)
         likelihoods[hypothesis] = total
     return likelihoods
 
 
-def _bind_distribution(distribution: Any, hypothesis: Claim) -> Any:
-    bindings = _claim_bindings(hypothesis)
+def _bind_distribution_impl(distribution: Distribution, hypothesis: Claim) -> Any:
+    """Bind deferred Variable params on a Distribution Knowledge → concrete _impl.
+
+    Returns the underlying pydantic ``_BaseDistribution`` with concrete
+    params, ready for logpdf/logpmf.
+    """
+    impl = distribution.impl
+    bindings = _claim_parameter_bindings(hypothesis)
     params: dict[str, Any] = {}
-    for name, value in distribution.params.items():
+    for name, value in impl.params.items():
         if _is_deferred_reference(value):
             bound = bindings.by_object.get(id(value))
             if bound is None:
@@ -294,7 +352,7 @@ def _bind_distribution(distribution: Any, hypothesis: Claim) -> Any:
             params[name] = bound
         else:
             params[name] = value
-    return distribution._replace_params(params)
+    return impl._replace_params(params)
 
 
 @dataclass(frozen=True)
@@ -303,7 +361,12 @@ class _Bindings:
     by_symbol: dict[str, list[Any]]
 
 
-def _claim_bindings(claim: Claim) -> _Bindings:
+def _claim_parameter_bindings(claim: Claim) -> _Bindings:
+    """Walk a hypothesis claim's formula and harvest Variable→value bindings.
+
+    Hypothesis formulas are expected to be ``Equals(variable, Constant)``
+    or conjunctions thereof — exactly what :func:`parameter` produces.
+    """
     by_object: dict[int, Any] = {}
     by_symbol: dict[str, list[Any]] = {}
     for variable, value in _equals_variable_constant_pairs(getattr(claim, "formula", None)):
@@ -312,25 +375,8 @@ def _claim_bindings(claim: Claim) -> _Bindings:
     return _Bindings(by_object=by_object, by_symbol=by_symbol)
 
 
-def _observation_value(claim: Claim, observable: Variable) -> Any:
-    values: list[Any] = []
-    for variable, value in _equals_variable_constant_pairs(getattr(claim, "formula", None)):
-        if variable is observable or variable.symbol == observable.symbol:
-            values.append(value)
-    if not values:
-        raise ValueError(
-            f"likelihood() data {claim.label or claim.content!r} has no observation "
-            f"for variable {observable.symbol!r}"
-        )
-    if len(values) > 1:
-        raise ValueError(
-            f"likelihood() data {claim.label or claim.content!r} has multiple values "
-            f"for variable {observable.symbol!r}"
-        )
-    return values[0]
-
-
 def _equals_variable_constant_pairs(formula: Any) -> list[tuple[Variable, Any]]:
+    """Extract (Variable, value) bindings from Equals / Land(Equals, ...) formulas."""
     if isinstance(formula, Equals):
         left, right = formula.left, formula.right
         if isinstance(left, Variable) and isinstance(right, Constant):
@@ -346,36 +392,122 @@ def _equals_variable_constant_pairs(formula: Any) -> list[tuple[Variable, Any]]:
     return []
 
 
-def _log_likelihood(distribution: Any, value: Any, data_claim: Claim) -> float:
-    noise_payload = ((data_claim.metadata or {}).get("bayes") or {}).get("noise")
-    if noise_payload:
-        return _log_likelihood_with_noise(distribution, value, noise_payload)
-    if distribution.kind in {"betabinomial", "binomial", "poisson"}:
-        return float(distribution.logpmf(value))
-    return float(distribution.logpdf(float(value)))
+def _observation_value(data_claim: Claim, observable: Variable) -> Any:
+    """Read the observed value from metadata['observation'] for a model observable."""
+    observation = (data_claim.metadata or {}).get("observation")
+    if not isinstance(observation, dict):
+        raise ValueError(
+            f"compare() data {data_claim.label or data_claim.content!r} has no "
+            "metadata['observation'] payload (use observe(observable, value=...))"
+        )
+    observed_target = observation.get("target")
+    if observed_target is not observable:
+        if isinstance(observed_target, Variable):
+            if not _same_variable_fallback(observed_target, observable):
+                raise ValueError(
+                    f"compare() data observable {observed_target!r} does not match "
+                    f"model observable {observable!r}"
+                )
+        else:
+            raise ValueError(
+                f"compare() data {data_claim.label or data_claim.content!r} target "
+                f"{observed_target!r} does not match model observable {observable!r}"
+            )
+    observed_unit = observation.get("unit")
+    if observed_unit != observable.unit:
+        raise ValueError(
+            "compare() data observation unit does not match model observable unit: "
+            f"data observable {observed_target!r} has observation unit {observed_unit!r}; "
+            f"model observable {observable!r} has unit {observable.unit!r}"
+        )
+    if "value" not in observation:
+        raise ValueError(
+            f"compare() data {data_claim.label or data_claim.content!r} "
+            "metadata['observation'] is missing 'value'"
+        )
+    return observation["value"]
+
+
+def _same_variable_fallback(data_observable: Variable, model_observable: Variable) -> bool:
+    if data_observable.symbol != model_observable.symbol:
+        return False
+    if not _same_domain(data_observable.domain, model_observable.domain):
+        return False
+    if data_observable.unit != model_observable.unit:
+        raise ValueError(
+            "compare() data observable unit does not match model observable unit: "
+            f"data observable {data_observable!r} has unit {data_observable.unit!r}; "
+            f"model observable {model_observable!r} has unit {model_observable.unit!r}"
+        )
+    return True
+
+
+def _same_domain(left: Any, right: Any) -> bool:
+    if left is right:
+        return True
+    if isinstance(left, PrimitiveType) and isinstance(right, PrimitiveType):
+        return left.name == right.name
+    if isinstance(left, Domain) and isinstance(right, Domain):
+        return (
+            left.label == right.label
+            and left.content == right.content
+            and left.members == right.members
+        )
+    return False
+
+
+def _observation_noise(data_claim: Claim) -> Distribution | None:
+    """Read the noise Distribution from the unified observation schema (or None)."""
+    observation = (data_claim.metadata or {}).get("observation")
+    if not isinstance(observation, dict):
+        return None
+    noise = observation.get("noise")
+    if noise is None:
+        return None
+    if not isinstance(noise, Distribution):
+        raise TypeError(
+            f"compare() data {data_claim.label or data_claim.content!r} noise must be a "
+            f"Distribution Knowledge object or None; got {type(noise).__name__}"
+        )
+    return noise
+
+
+def _log_likelihood(
+    distribution_impl: Any,
+    value: Any,
+    noise: Distribution | None,
+) -> float:
+    """Evaluate log P(value | distribution_impl), folding in optional noise."""
+    if noise is None:
+        if distribution_impl.kind in {"betabinomial", "binomial", "poisson"}:
+            return float(distribution_impl.logpmf(value))
+        return float(distribution_impl.logpdf(float(value)))
+    return _log_likelihood_with_noise(distribution_impl, value, noise)
 
 
 def _log_likelihood_with_noise(
-    distribution: Any, value: Any, noise_payload: dict[str, Any]
+    distribution_impl: Any,
+    value: Any,
+    noise: Distribution,
 ) -> float:
-    if noise_payload.get("kind") != "normal":
-        raise NotImplementedError("Bayes likelihood currently supports only Normal additive noise")
-    from gaia.engine.bayes.distributions.continuous import Normal
-
-    noise = Normal(**noise_payload.get("params", {}))
-    low, high = distribution.support()
-    if distribution.kind in {"betabinomial", "binomial", "poisson"}:
+    """Convolve predictive with Normal additive noise."""
+    if noise.kind != "normal":
+        raise NotImplementedError("Bayes compare currently supports only Normal additive noise")
+    noise_impl: Any = noise.impl
+    sigma = float(noise_impl.params["sigma"])
+    low, high = distribution_impl.support()
+    if distribution_impl.kind in {"betabinomial", "binomial", "poisson"}:
         if not math.isfinite(high):
-            high = max(int(value + 10 * noise.params["sigma"]), int(value) + 50)
+            high = max(int(value + 10 * sigma), int(value) + 50)
         terms = []
         for x in range(int(low), int(high) + 1):
-            terms.append(distribution.logpmf(x) + noise.logpdf(float(value) - x))
+            terms.append(distribution_impl.logpmf(x) + noise_impl.logpdf(float(value) - x))
         return _logsumexp(terms)
 
     from scipy.integrate import quad
 
     def integrand(x: float) -> float:
-        return math.exp(distribution.logpdf(x) + noise.logpdf(float(value) - x))
+        return math.exp(distribution_impl.logpdf(x) + noise_impl.logpdf(float(value) - x))
 
     integral, _ = quad(integrand, float(low), float(high), limit=100)
     if integral <= 0.0 or not math.isfinite(integral):
@@ -391,9 +523,14 @@ def _logsumexp(values: list[float]) -> float:
     return m + math.log(sum(math.exp(v - m) for v in finite))
 
 
+# ---------------------------------------------------------------------------
+# Exhaustive disjunction helper (≥3 hypotheses + exhaustive_pairwise_complement)
+# ---------------------------------------------------------------------------
+
+
 def _exhaustive_disjunction_operator(
     hypotheses: list[Claim],
-    action: Likelihood,
+    action: ModelCompare,
     *,
     namespace: str,
     package_name: str,
@@ -408,7 +545,7 @@ def _exhaustive_disjunction_operator(
     if relation_key in existing_relations:
         return [], []
 
-    label = _helper_label("bayes_exhaustive", cmp_id)
+    label = _helper_label("compare_exhaustive", cmp_id)
     helper_id = make_qid(namespace, package_name, label)
     helper = IrKnowledge(
         id=helper_id,
@@ -420,7 +557,7 @@ def _exhaustive_disjunction_operator(
             "review": False,
             "helper_kind": "bayes_exhaustive_result",
             "prior": 1.0 - CROMWELL_EPS,
-            "bayes": {"auto_generated_by": f"likelihood:{cmp_id}"},
+            "comparison": {"auto_generated_by": f"compare:{cmp_id}"},
         },
     )
     op = IrOperator(
@@ -429,7 +566,7 @@ def _exhaustive_disjunction_operator(
         operator=OperatorType.DISJUNCTION,
         variables=variables,
         conclusion=helper_id,
-        metadata={"bayes": {"auto_generated_by": f"likelihood:{cmp_id}"}},
+        metadata={"comparison": {"auto_generated_by": f"compare:{cmp_id}"}},
     )
     return [helper], [op]
 
@@ -455,11 +592,6 @@ def _existing_relations(operators: list[IrOperator]) -> set[tuple[str, frozenset
     for operator in operators:
         relations.add((str(operator.operator), frozenset(operator.variables)))
     return relations
-
-
-def _variable_descriptor(variable: Variable) -> dict[str, Any]:
-    domain = getattr(variable.domain, "name", None) or getattr(variable.domain, "label", None)
-    return {"symbol": variable.symbol, "domain": domain}
 
 
 def _clamp(value: float) -> float:

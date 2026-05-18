@@ -44,13 +44,14 @@ from gaia.cli.commands.author._common import (
 )
 from gaia.cli.commands.author._formula_sandbox import (
     FormulaSandboxError,
+    extract_engine_lang_names,
     validate_formula_expr,
 )
 from gaia.cli.commands.author._proposed_op import ProposedAuthorOp
 from gaia.cli.commands.author._runner import run_author_op
 
 # Detect when ``--distribution`` carries an inline Distribution
-# expression (e.g. ``bayes.Binomial(n=395, p=3/4)``) instead of a bare
+# expression (e.g. ``Binomial("k under H", n=395, p=3/4)``) instead of a bare
 # identifier. The cli accepts both shapes: bare-identifier routes
 # through pre-write reference resolution; inline-expression routes
 # through the formula sandbox.
@@ -102,7 +103,7 @@ def model_command(
             "of a Distribution binding (created via `bayes binomial` / "
             "`bayes normal` / ...) — resolved in module scope, or "
             "(b) an inline Distribution expression like "
-            "`bayes.Binomial(n=395, p=3/4)` — validated via the formula "
+            "`Binomial('k under H', n=395, p=3/4)` — validated via the formula "
             "sandbox and emitted verbatim into the `distribution=` slot."
         ),
     ),
@@ -132,7 +133,7 @@ def model_command(
             "Comma-separated identifiers to whitelist inside the formula "
             "sandbox when --distribution carries an inline expression "
             "referencing module-scope constants (e.g. `--distribution "
-            "'bayes.Binomial(n=TOTAL_COUNT, p=MENDELIAN_DOMINANT_PROBABILITY)' "
+            "\"Binomial('k under H', n=TOTAL_COUNT, p=MENDELIAN_DOMINANT_PROBABILITY)\" "
             "--references TOTAL_COUNT,MENDELIAN_DOMINANT_PROBABILITY`). "
             "Each name is also pushed into pre-write reference resolution "
             "so module-scope binding is verified. No effect when "
@@ -189,7 +190,7 @@ def model_command(
     # Bare identifier → push into references for pre-write resolution.
     # Inline expression (anything with parentheses or attribute syntax) →
     # validate via the formula sandbox (which whitelists Distribution
-    # factories + bayes.<Factory> attribute shape) and skip the
+    # factories imported from gaia.engine.lang) and skip the
     # reference-resolution path for the distribution itself.
     references_list, references_error = split_csv_idents(references)
     if references_error:
@@ -268,8 +269,11 @@ def model_command(
         metadata=metadata_dict,
     )
     all_references = [hypothesis, observable, *background_list, *references_list]
+    required_imports: tuple[str, ...] = ("bayes",)
     if not distribution_is_inline:
         all_references.insert(2, distribution)
+    else:
+        required_imports = ("bayes", *extract_engine_lang_names(distribution))
     target_file = normalize_file_option(file)
     proposed_op = ProposedAuthorOp(
         verb="bayes.model",
@@ -277,11 +281,10 @@ def model_command(
         label=label,
         references=all_references,
         generated_code=generated_code,
-        # ``bayes`` must be importable in the target file. The scaffold
-        # template seeds ``from gaia.engine import bayes``; the
-        # pre-write reference check accepts the dotted-call form because
-        # ``bayes`` itself is the bound name in module scope.
-        required_imports=("bayes",),
+        # ``bayes`` and any inline Distribution factories must be importable
+        # in the target file. The writer keeps those imports narrow and
+        # idempotent, which lets the scaffold stay minimal.
+        required_imports=required_imports,
         target_file=target_file,
         sibling_imports=build_sibling_imports(all_references, target_file=target_file),
     )

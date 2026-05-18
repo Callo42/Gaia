@@ -76,12 +76,36 @@ def test_gaia_lang_does_not_export_marker_only_causal_surface():
     assert not hasattr(lang.ClaimKind, "CAUSAL")
 
 
-def test_bayes_surface_uses_model_not_predict_alias():
+def test_bayes_surface_exposes_model_and_compare_verbs():
+    """The unified v0.5 Bayes surface is ``model`` + ``compare`` + ``PrecomputedLikelihoods``.
+
+    The earlier in-flight alpha exposed ``bayes.likelihood``
+    / ``bayes.data`` plus typed-value ``bayes.Normal`` / ``bayes.Binomial``
+    distribution aliases. The clean break (see
+    ``docs/specs/2026-05-17-bayes-unified-design.md``) replaces all of
+    that with three names. This pin captures both the positive surface
+    and the absence of the legacy names.
+    """
     import gaia.engine.bayes as bayes
 
     assert hasattr(bayes, "model")
-    assert not hasattr(bayes, "predict")
-    assert "predict" not in bayes.__all__
+    assert hasattr(bayes, "compare")
+    assert hasattr(bayes, "PrecomputedLikelihoods")
+    assert "model" in bayes.__all__
+    assert "compare" in bayes.__all__
+    assert "PrecomputedLikelihoods" in bayes.__all__
+
+    # Legacy verbs are gone — no compatibility shim.
+    for removed in ("predict", "likelihood", "data"):
+        assert not hasattr(bayes, removed), (
+            f"gaia.engine.bayes.{removed} should be gone; use model / compare / observe instead"
+        )
+
+    # Typed-value distribution re-exports are gone — use gaia.engine.lang.
+    for removed in ("Normal", "Binomial", "BetaBinomial", "Beta", "Poisson"):
+        assert not hasattr(bayes, removed), (
+            f"gaia.engine.bayes.{removed} should be gone; import gaia.engine.lang.{removed} instead"
+        )
 
 
 def test_gaia_lang_import_does_not_eagerly_import_bayes():

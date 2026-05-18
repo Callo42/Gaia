@@ -1,4 +1,12 @@
-"""Gaia Lang v6 Support verbs: derive, observe, compute."""
+"""Gaia Lang v6 Support verbs: derive, observe, compute.
+
+Docstrings throughout this module use the Greek sigma (``σ``) for noise
+standard-deviation arguments — a domain convention for measurement
+error. The file-level ``# ruff: noqa: RUF002`` keeps ruff from flagging
+the ambiguous-symbol rule for those scientific docstrings.
+"""
+
+# ruff: noqa: RUF002
 
 from __future__ import annotations
 
@@ -17,6 +25,7 @@ from gaia.engine.lang.runtime.action import (
 )
 from gaia.engine.lang.runtime.distribution import Distribution
 from gaia.engine.lang.runtime.knowledge import Claim, Knowledge
+from gaia.engine.lang.runtime.variable import Variable
 
 
 def _as_given_tuple(given: Claim | tuple[Claim, ...] | list[Claim] | None) -> tuple[Claim, ...]:
@@ -95,7 +104,7 @@ _OBSERVE_VALUE_SENTINEL: Any = object()
 
 
 def observe(
-    conclusion: Claim | Distribution | str,
+    conclusion: Claim | Distribution | Variable | str,
     *,
     value: Any = _OBSERVE_VALUE_SENTINEL,
     error: Any = None,
@@ -107,7 +116,7 @@ def observe(
 ) -> Claim:
     """Empirical observation.
 
-    Two authoring shapes:
+    Three authoring shapes:
 
     1. **Discrete claim observation** — ``observe(my_claim)``. A no-premise
        observation pins ``my_claim.prior`` to ``1 - CROMWELL_EPS``. Use
@@ -127,7 +136,16 @@ def observe(
        for a noise-free observation, a scalar interpreted as the Gaussian
        additive standard deviation, or a :class:`Distribution` for a
        custom noise model.
-    """  # noqa: RUF002 (sigma symbol used in scientific docstring)
+
+    3. **Variable observation (v0.6 unified-bayes path)** —
+       ``observe(variable, value=v, error=σ)``. Records a measurement event
+       for a primitive :class:`Variable` (the kind that appears as the
+       observable of a Bayes predictive model). Writes the unified
+       ``metadata["observation"]`` schema consumed by
+       :func:`gaia.engine.bayes.compare`. Scalar ``error`` is sugared into
+       an anonymous ``Normal(mu=0, sigma=error)`` so noise is always either
+       ``None`` or a :class:`Distribution` Knowledge node.
+    """
     if isinstance(conclusion, Distribution):
         if value is _OBSERVE_VALUE_SENTINEL:
             raise TypeError(
@@ -152,10 +170,32 @@ def observe(
             label=label,
         )
 
+    if isinstance(conclusion, Variable):
+        if value is _OBSERVE_VALUE_SENTINEL:
+            raise TypeError(
+                "observe(variable, ...) requires `value=` (the measured numeric value)."
+            )
+        if given:
+            raise TypeError(
+                "observe(variable, value=..., given=...) is not supported "
+                "— variable observations are unconditional measurement "
+                "events. To express a conditional measurement, observe a "
+                "Claim wrapping the conditioning premise."
+            )
+        return _observe_variable(
+            conclusion,
+            value=value,
+            error=error,
+            background=background,
+            source_refs=source_refs,
+            rationale=rationale,
+            label=label,
+        )
+
     if value is not _OBSERVE_VALUE_SENTINEL or error is not None:
         raise TypeError(
             "observe(..., value=..., error=...) only applies to Distribution "
-            "targets. For discrete claim observations omit value/error."
+            "or Variable targets. For discrete claim observations omit value/error."
         )
 
     if isinstance(conclusion, str):
@@ -235,8 +275,8 @@ def _validate_noise_distribution_unit(noise: Distribution, *, target: Distributi
     """Ensure a Distribution-valued noise model uses the target quantity's unit."""
     from gaia.unit import ureg
 
-    target_unit: str | None = (target.metadata or {}).get("unit")
-    noise_unit: str | None = (noise.metadata or {}).get("unit")
+    target_unit = _distribution_unit(target)
+    noise_unit = _distribution_unit(noise)
     if target_unit is None:
         if noise_unit is not None:
             raise TypeError(
@@ -266,6 +306,47 @@ def _validate_noise_distribution_unit(noise: Distribution, *, target: Distributi
         )
 
 
+def _distribution_unit(distribution: Distribution) -> str | None:
+    unit = (distribution.metadata or {}).get("unit")
+    if unit is None:
+        return None
+    from gaia.unit import canonical_unit
+
+    return canonical_unit(unit)
+
+
+def _ensure_noise_unit_for_variable(noise: Distribution, *, target: Variable) -> None:
+    from gaia.unit import ureg
+
+    target_unit = target.unit
+    noise_unit = _distribution_unit(noise)
+
+    if target_unit is None:
+        if noise_unit is not None:
+            raise TypeError(
+                "observe(variable, error=<Distribution>) got a unit-typed noise "
+                f"distribution {noise_unit!r} for unitless target {target.symbol!r}."
+            )
+        return
+    if noise_unit is None:
+        raise TypeError(
+            "observe(variable, error=<Distribution>) noise distribution must carry "
+            f"unit {target_unit!r} because target {target.symbol!r} carries that unit."
+        )
+    try:
+        (1 * ureg.parse_units(noise_unit)).to(ureg.parse_units(target_unit))
+    except Exception as err:
+        raise ValueError(
+            "observe(variable, error=<Distribution>) noise distribution unit "
+            f"{noise_unit!r} is not compatible with target unit {target_unit!r}: {err}"
+        ) from err
+    if noise_unit != target_unit:
+        raise ValueError(
+            "observe(variable, error=<Distribution>) noise distribution unit "
+            f"{noise_unit!r} must match target unit {target_unit!r}."
+        )
+
+
 def _observe_continuous(
     target: Distribution,
     *,
@@ -276,22 +357,32 @@ def _observe_continuous(
     rationale: str,
     label: str | None,
 ) -> Claim:
-    """Build the observation Claim for a continuous quantity measurement."""
+    """Build the observation Claim for a continuous Distribution measurement.
+
+    Writes the **unified** ``metadata["observation"]`` schema (same shape
+    that :func:`_observe_variable` produces): ``{target, value, noise,
+    unit, kind}``. Scalar ``error`` is sugared into an anonymous
+    :class:`Distribution` (``Normal(mu=0, sigma=error)``) so noise is
+    always either ``None`` or a Distribution Knowledge object — the same
+    contract the Bayes ``compare()`` lowering relies on for observed data.
+    Distribution observations remain the quantity-with-predicate path;
+    Bayes ``model(...)`` observables are Variables only.
+    """
     coerced_value, value_unit = _coerce_observation_scalar(value, target=target, role="value")
 
-    coerced_error: Any
+    noise: Distribution | None
     if error is None:
-        coerced_error = None
+        noise = None
     elif isinstance(error, Distribution):
         _validate_noise_distribution_unit(error, target=target)
-        coerced_error = error
+        noise = error
     else:
         coerced_error_scalar, _ = _coerce_observation_scalar(error, target=target, role="error")
         if coerced_error_scalar <= 0.0:
             raise ValueError(
                 f"observe(distribution, error=sigma) requires sigma > 0, got {error!r}."
             )
-        coerced_error = coerced_error_scalar
+        noise = _anonymous_normal_noise(coerced_error_scalar, value_unit=value_unit)
 
     label_part = target.label or target.content[:40]
     unit_suffix = f" {value_unit}" if value_unit else ""
@@ -300,26 +391,268 @@ def _observe_continuous(
     # magnitudes; Python's :g default flips to scientific only at very small
     # or very large magnitudes).
     value_part = format(coerced_value, "g")
-    if isinstance(error, Distribution):
-        error_part = f" with noise {error.kind}"
-    elif error is None:
+    if noise is None:
         error_part = ""
+    elif noise.kind == "normal":
+        sigma = noise.params.get("sigma")
+        if isinstance(sigma, (int, float)):
+            error_part = f" +/- {format(float(sigma), 'g')}{unit_suffix}"
+        else:
+            error_part = f" with noise {noise.kind}"
     else:
-        error_part = f" +/- {format(coerced_error, 'g')}{unit_suffix}"
+        error_part = f" with noise {noise.kind}"
     content = f"Observed {label_part} = {value_part}{unit_suffix}{error_part}"
 
     obs_metadata: dict[str, Any] = {
         "observation": {
-            "target_distribution": target,
+            "target": target,
             "value": coerced_value,
-            "error": coerced_error,
+            "noise": noise,
             "unit": value_unit,
-            "kind": "continuous_observation",
+            "kind": "observation",
         },
     }
     if source_refs:
         obs_metadata["source_refs"] = list(source_refs)
+        obs_metadata["observation"]["source_refs"] = list(source_refs)
     obs_claim = Claim(content, metadata=obs_metadata)
+    warrant = _implication_warrant(
+        "observe",
+        given=(),
+        conclusion=obs_claim,
+        rationale=rationale,
+    )
+    action = Observe(
+        label=label,
+        rationale=rationale,
+        background=list(background or []),
+        warrants=[warrant],
+        metadata={"source_refs": list(source_refs)} if source_refs else {},
+        conclusion=obs_claim,
+        given=(),
+    )
+    _pin_observed_claim(obs_claim)
+    validate_no_self_warrant(action, obs_claim)
+    attach_reasoning(obs_claim, action)
+    return obs_claim
+
+
+def _anonymous_normal_noise(sigma: float, *, value_unit: str | None) -> Distribution:
+    """Return an anonymous ``Normal(mu=0, sigma=sigma)`` Distribution Knowledge.
+
+    Used by both :func:`_observe_continuous` and :func:`_observe_variable`
+    to sugar scalar ``error=σ`` into the unified Distribution-shaped
+    ``noise`` payload. Carrying a unit through to the Normal's
+    parameters keeps quantity-with-predicate observations dimensionally
+    consistent.
+    """
+    from gaia.engine.lang.runtime.distribution import Normal as _NormalFactory
+    from gaia.unit import q
+
+    if value_unit is None:
+        return _NormalFactory(
+            f"measurement noise Normal(mu=0, sigma={sigma:g})",
+            mu=0.0,
+            sigma=sigma,
+        )
+    return _NormalFactory(
+        f"measurement noise Normal(mu=0 {value_unit}, sigma={sigma:g} {value_unit})",
+        mu=q(0.0, value_unit),
+        sigma=q(sigma, value_unit),
+    )
+
+
+def _coerce_variable_scalar(
+    raw: Any,
+    *,
+    target: Variable,
+    role: str,
+) -> tuple[int | float, str | None]:
+    """Coerce a Variable-target observation scalar to (magnitude, unit).
+
+    Variable unit awareness comes from ``target.unit``. Unit-typed variables
+    require Quantity observations convertible to that canonical unit; unitless
+    variables require bare numeric scalars.
+
+    Numeric type is preserved (``int`` stays ``int``, ``float`` stays
+    ``float``) so discrete-distribution lowering (Binomial / BetaBinomial
+    / Poisson logpmf) sees the integer count the author wrote without
+    a stray float-cast.
+    """
+    from gaia.unit import is_quantity, ureg
+
+    target_unit = target.unit
+    if target_unit is not None:
+        if not is_quantity(raw):
+            raise TypeError(
+                f"observe(variable, {role}=...) must be a gaia.unit.Quantity in "
+                f"{target_unit!r} because target {target.symbol!r} carries that unit; "
+                f"got {type(raw).__name__}: {raw!r}."
+            )
+        try:
+            converted = raw.to(ureg.parse_units(target_unit))
+        except Exception as err:
+            raise ValueError(
+                f"observe(variable, {role}=...) unit {raw.units!s} is not compatible "
+                f"with target unit {target_unit!r}: {err}"
+            ) from err
+        return _coerce_variable_domain_value(
+            float(converted.magnitude), target=target, role=role
+        ), target_unit
+
+    if is_quantity(raw):
+        raise TypeError(
+            f"observe(variable, {role}=...) got a unit-typed Quantity for unitless "
+            f"target {target.symbol!r}. Declare Variable(unit=...) or pass a bare scalar."
+        )
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        raise TypeError(
+            f"observe(variable, {role}=...) must be a numeric scalar, got "
+            f"{type(raw).__name__}: {raw!r}."
+        )
+    return _coerce_variable_domain_value(raw, target=target, role=role), None
+
+
+def _coerce_variable_domain_value(
+    value: int | float,
+    *,
+    target: Variable,
+    role: str,
+) -> int | float:
+    """Validate an observed scalar against the Variable's declared domain."""
+    from gaia.engine.lang.formula.primitives import Nat, PrimitiveType
+    from gaia.engine.lang.runtime.domain import Domain
+
+    candidate: int | float = value
+    if target.domain is Nat and isinstance(value, float) and value.is_integer():
+        candidate = int(value)
+
+    if isinstance(target.domain, PrimitiveType):
+        if not target.domain.accepts(candidate):
+            raise ValueError(
+                f"observe(variable, {role}=...) value {value!r} is not accepted by "
+                f"target {target.symbol!r} domain {target.domain}."
+            )
+        return candidate
+
+    if isinstance(target.domain, Domain) and candidate not in target.domain.members:
+        raise ValueError(
+            f"observe(variable, {role}=...) value {value!r} is not in domain members "
+            f"of target {target.symbol!r}."
+        )
+    return candidate
+
+
+def _coerce_variable_error(
+    error: Any,
+    *,
+    target: Variable,
+    value_unit: str | None,
+) -> Distribution | None:
+    """Sugar scalar error= into anonymous Normal(0, σ); pass Distribution through.
+
+    Returns ``None`` for noise-free observations. Scalar ``error=σ``
+    (with σ > 0) becomes an anonymous :class:`Distribution` produced by
+    :func:`_anonymous_normal_noise` (shared with the Distribution-target
+    path). A pre-built :class:`Distribution` is accepted as-is.
+    """
+    if error is None:
+        return None
+    if isinstance(error, Distribution):
+        _ensure_noise_unit_for_variable(error, target=target)
+        return error
+    from gaia.unit import is_quantity, ureg
+
+    if target.unit is not None:
+        if not is_quantity(error):
+            raise TypeError(
+                "observe(variable, error=...) must be a gaia.unit.Quantity or "
+                f"a Distribution because target {target.symbol!r} carries unit "
+                f"{target.unit!r}; got {type(error).__name__}: {error!r}."
+            )
+        try:
+            converted = error.to(ureg.parse_units(target.unit))
+        except Exception as err:
+            raise ValueError(
+                f"observe(variable, error=...) unit {error.units!s} is not compatible "
+                f"with target unit {target.unit!r}: {err}"
+            ) from err
+        sigma = float(converted.magnitude)
+        if sigma <= 0.0:
+            raise ValueError(f"observe(variable, error=sigma) requires sigma > 0, got {error!r}.")
+        return _anonymous_normal_noise(sigma, value_unit=value_unit)
+
+    if is_quantity(error):
+        raise TypeError(
+            f"observe(variable, error=...) got a unit-typed Quantity for unitless "
+            f"target {target.symbol!r}. Declare Variable(unit=...) or pass a bare scalar."
+        )
+    if isinstance(error, bool) or not isinstance(error, (int, float)):
+        raise TypeError(
+            "observe(variable, error=...) must be None, a positive numeric scalar, "
+            f"or a Distribution; got {type(error).__name__}: {error!r}."
+        )
+    sigma = float(error)
+    if sigma <= 0.0:
+        raise ValueError(f"observe(variable, error=sigma) requires sigma > 0, got {error!r}.")
+    return _anonymous_normal_noise(sigma, value_unit=value_unit)
+
+
+def _observe_variable(
+    target: Variable,
+    *,
+    value: Any,
+    error: Any,
+    background: list[Knowledge] | None,
+    source_refs: list[str] | None,
+    rationale: str,
+    label: str | None,
+) -> Claim:
+    """Build the observation Claim for a Variable measurement (v0.6 path).
+
+    Writes the unified ``metadata["observation"]`` schema consumed by the
+    v0.6 ``compare(...)`` lowering. Schema fields:
+
+    - ``target``: the original Variable object (identity preserved).
+    - ``value``: coerced float magnitude.
+    - ``noise``: a Distribution Knowledge object or None.
+    - ``unit``: target variable's canonical unit string, when present.
+    - ``kind``: discriminator ``"observation"``.
+    """
+    coerced_value, value_unit = _coerce_variable_scalar(value, target=target, role="value")
+    noise = _coerce_variable_error(error, target=target, value_unit=value_unit)
+
+    label_part = target.symbol
+    unit_suffix = f" {value_unit}" if value_unit else ""
+    value_part = format(float(coerced_value), "g")
+    if noise is None:
+        error_part = ""
+    elif noise.kind == "normal":
+        sigma = noise.params.get("sigma")
+        if isinstance(sigma, (int, float)):
+            error_part = f" +/- {format(float(sigma), 'g')}{unit_suffix}"
+        else:
+            error_part = f" with noise {noise.kind}"
+    else:
+        error_part = f" with noise {noise.kind}"
+    content = f"Observed {label_part} = {value_part}{unit_suffix}{error_part}."
+
+    obs_metadata: dict[str, Any] = {
+        "observation": {
+            "target": target,
+            "value": coerced_value,
+            "noise": noise,
+            "unit": value_unit,
+            "kind": "observation",
+        },
+    }
+    if source_refs:
+        obs_metadata["source_refs"] = list(source_refs)
+        obs_metadata["observation"]["source_refs"] = list(source_refs)
+
+    obs_claim = Claim(content, metadata=obs_metadata)
+    if label is not None:
+        obs_claim.label = label
     warrant = _implication_warrant(
         "observe",
         given=(),
@@ -410,7 +743,14 @@ def compute(
     """
     if callable(conclusion_type) and not inspect.isclass(conclusion_type) and fn is None:
         wrapped_fn = conclusion_type
-        sig = inspect.signature(wrapped_fn)
+        # ``eval_str=True`` resolves PEP-563 string annotations so wrappers
+        # written in modules with ``from __future__ import annotations`` (the
+        # default for most modern Python projects) still produce a real
+        # type object for the return annotation rather than the bare string
+        # ``"PrecomputedLikelihoods"``. Required for downstream
+        # ``isinstance(result_value, return_type)`` to work in
+        # ``_wrap_result`` — passing a string there raises TypeError.
+        sig = inspect.signature(wrapped_fn, eval_str=True)
         return_type = sig.return_annotation
         if return_type is inspect.Signature.empty:
             raise TypeError("@compute requires a Claim return annotation")

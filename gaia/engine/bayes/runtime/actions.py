@@ -1,26 +1,24 @@
-"""Bayes runtime action shapes."""
+"""Bayes runtime action shapes - Model and ModelCompare."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import Any
 
 from gaia.engine.lang.runtime.action import Reasoning
+from gaia.engine.lang.runtime.distribution import Distribution
 from gaia.engine.lang.runtime.knowledge import Claim
 from gaia.engine.lang.runtime.variable import Variable
-
-if TYPE_CHECKING:
-    from gaia.engine.bayes.distributions.protocol import Distribution
 
 
 @dataclass
 class BayesInference(Reasoning):
-    """Bayes-family reasoning record."""
+    """Bayes-family reasoning record (marker base class)."""
 
 
 @dataclass
-class PredictiveModel(BayesInference):
-    """Predictive model for one hypothesis and one observable."""
+class Model(BayesInference):
+    """Predictive model: ties a hypothesis to a distribution over an observable."""
 
     hypothesis: Claim | None = None
     observable: Variable | None = None
@@ -29,13 +27,12 @@ class PredictiveModel(BayesInference):
 
 
 @dataclass
-class Likelihood(BayesInference):
-    """Likelihood comparison between predictive-model helper claims."""
+class ModelCompare(BayesInference):
+    """Equal-positioned list of competing predictive models."""
 
     helper: Claim | None = None
-    model: Claim | None = None
-    against: tuple[Claim, ...] = ()
+    models: tuple[Claim, ...] = ()
     data: tuple[Claim, ...] = ()
-    exclusivity: str = "pairwise_contradiction"
-    precomputed: dict[Claim, float] | None = None
+    exclusivity: str = "exhaustive_pairwise_complement"
+    precomputed: Any | None = None
     log_likelihoods: dict[Claim, float] = field(default_factory=dict)

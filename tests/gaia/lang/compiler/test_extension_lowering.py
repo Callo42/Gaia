@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 import gaia.engine.bayes as bayes
-from gaia.engine.lang import Nat, Probability, Variable, parameter
+from gaia.engine.lang import Binomial, Nat, Probability, Variable, parameter
 from gaia.engine.lang.compiler.compile import compile_package_artifact
 from gaia.engine.lang.runtime.package import CollectedPackage
 
@@ -24,7 +24,7 @@ def _build_minimal_bayes_package(name: str) -> CollectedPackage:
         bayes.model(
             hypothesis,
             observable=k,
-            distribution=bayes.Binomial(n=10, p=theta),
+            distribution=Binomial("k under h", n=10, p=theta),
             label="theta_model",
         )
     return pkg
@@ -107,7 +107,7 @@ def test_bayes_actions_compile_through_registered_extension() -> None:
         model_helper = bayes.model(
             hypothesis,
             observable=k,
-            distribution=bayes.Binomial(n=10, p=theta),
+            distribution=Binomial("k under h", n=10, p=theta),
             label="theta_model",
         )
 
@@ -117,7 +117,7 @@ def test_bayes_actions_compile_through_registered_extension() -> None:
         knowledge for knowledge in compiled.graph.knowledges if knowledge.id == helper_id
     )
 
-    assert helper_ir.metadata["bayes"]["role"] == "prediction"
+    assert helper_ir.metadata["model"]["kind"] == "model"
     assert compiled.action_label_map["t:extension_bayes_pkg::action::theta_model"] == helper_id
 
 

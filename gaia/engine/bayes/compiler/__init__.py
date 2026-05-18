@@ -1,4 +1,4 @@
-"""Bayes compiler lowering."""
+"""Bayes compiler lowering — registers the action lowerer for the v0.5 unified surface."""
 
 from gaia.engine.bayes.compiler.lower import BayesLoweringResult, lower_bayes_claims
 from gaia.engine.bayes.runtime import BayesInference
@@ -17,6 +17,7 @@ def _is_bayes_action(action: object) -> bool:
 
 
 def _lower_bayes_actions(context: ActionLoweringContext) -> ActionLoweringResult:
+    """Lower :class:`BayesInference` actions through the unified pass."""
     lowered = lower_bayes_claims(
         context.knowledge_nodes,
         actions=context.actions,
@@ -39,13 +40,11 @@ def _lower_bayes_actions(context: ActionLoweringContext) -> ActionLoweringResult
 def register_bayes_lowerer() -> None:
     """Register Bayes action lowering with the Gaia Lang compiler.
 
-    Identity-aware idempotency: returns early only when the existing
-    ``"bayes"`` registration uses the official ``_is_bayes_action`` /
-    ``_lower_bayes_actions`` pair. If a different lowerer is already
-    registered under the ``"bayes"`` name, raise :class:`ValueError`
-    instead of silently shadowing it — that case is the exact scenario the
-    duplicate-name guard on :func:`register_action_lowerer` exists to
-    surface, and a name-only idempotency check would mask it.
+    Identity-aware idempotency: returns early when the existing ``"bayes"``
+    registration already points at the official handler/lowerer pair.
+    Raises :class:`ValueError` when a different lowerer claims the name —
+    this is the exact scenario the duplicate-name guard on
+    :func:`register_action_lowerer` exists to surface.
 
     Safe to call from both ``gaia.engine.bayes.__init__`` (import-time
     self-registration) and ``discover_and_register_extensions`` (called by

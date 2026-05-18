@@ -689,13 +689,15 @@ def test_duplicate_compose_action_label_raises():
 
 
 def test_duplicate_bayes_and_core_action_label_raises():
+    from gaia.engine.lang import Beta
+
     with CollectedPackage("v6_actions") as pkg:
         theta = Variable(symbol="theta", domain=ProbabilityDomain)
         hypothesis = parameter(theta, 0.5, content="theta = 0.5.", prior=0.5, label="h")
         bayes.model(
             hypothesis,
             observable=theta,
-            distribution=bayes.Beta(alpha=1, beta=1),
+            distribution=Beta("theta prior", alpha=1, beta=1),
             label="same_action",
         )
         conclusion = derive("C.", given=hypothesis, rationale="H implies C.", label="same_action")

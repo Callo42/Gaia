@@ -1,7 +1,7 @@
 import pytest
 
 from gaia.engine.ir import QuantityLiteral
-from gaia.unit import Quantity, from_literal, q, to_literal, ureg
+from gaia.unit import Quantity, canonical_unit, from_literal, q, to_literal, ureg
 
 
 def test_q_creates_shared_registry_quantity():
@@ -11,6 +11,22 @@ def test_q_creates_shared_registry_quantity():
     assert qty._REGISTRY is ureg
     assert qty.magnitude == 80
     assert str(qty.units) == "kelvin"
+
+
+def test_canonical_unit_normalizes_aliases() -> None:
+    assert canonical_unit("K") == "kelvin"
+    assert canonical_unit("m/s") == "meter / second"
+
+
+@pytest.mark.parametrize("unit", ["", " "])
+def test_canonical_unit_rejects_empty_or_blank_strings(unit: str) -> None:
+    with pytest.raises(TypeError, match="unit must be a non-empty string"):
+        canonical_unit(unit)
+
+
+def test_canonical_unit_rejects_non_string_input() -> None:
+    with pytest.raises(TypeError, match="unit must be a non-empty string"):
+        canonical_unit(1)  # type: ignore[arg-type]
 
 
 def test_to_literal_is_deterministic_json_native():

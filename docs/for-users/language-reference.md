@@ -218,13 +218,13 @@ premise, model that premise as a separate claim.
 
 ### Bayes hypothesis comparison
 
-Use `bayes.model(...)` and `bayes.likelihood(...)` when the problem is not
+Use `bayes.model(...)` and `bayes.compare(...)` when the problem is not
 "what is the probability this quantity exceeds a threshold?" but rather "which
 hypothesis predicts the observed data better?"
 
 ```python
 import gaia.engine.bayes as bayes
-from gaia.engine.lang import Nat, Probability, Variable, parameter
+from gaia.engine.lang import Binomial, Nat, Probability, Variable, observe, parameter
 
 theta = Variable(symbol="theta", domain=Probability)
 k = Variable(symbol="k", domain=Nat)
@@ -233,7 +233,7 @@ n = 395
 h_3_1 = parameter(theta, 0.75, describe="Mendelian 3:1 segregation.")
 h_null = parameter(theta, 0.5, describe="Null 1:1 segregation.")
 
-data = bayes.data(
+data = observe(
     k,
     value=295,
     rationale="F2 count table reports 295 dominant phenotypes.",
@@ -242,32 +242,50 @@ data = bayes.data(
 model_3_1 = bayes.model(
     h_3_1,
     observable=k,
-    distribution=bayes.Binomial(n=n, p=theta),
+    distribution=Binomial("k under Mendel 3:1", n=n, p=theta),
     rationale="If h_3_1 holds, k follows Binomial(n=395, p=0.75).",
 )
 model_null = bayes.model(
     h_null,
     observable=k,
-    distribution=bayes.Binomial(n=n, p=theta),
+    distribution=Binomial("k under null 1:1", n=n, p=theta),
     rationale="If h_null holds, k follows Binomial(n=395, p=0.5).",
 )
 
-comparison = bayes.likelihood(
+comparison = bayes.compare(
     data,
-    model=model_3_1,
-    against=[model_null],
+    models=[model_3_1, model_null],
     exclusivity="exhaustive_pairwise_complement",
     rationale="Compare the observed count under the two competing models.",
 )
 ```
 
-`bayes.model(...)` returns a predictive-model helper claim. `bayes.likelihood(...)`
+`bayes.model(...)` returns a predictive-model helper claim. `bayes.compare(...)`
 returns a comparison helper claim and can also emit reviewable exclusivity or
-contradiction relations among the compared hypotheses. Use
-`exclusivity="none"` when Gaia should not add any structural relation;
-`"pairwise_contradiction"` when at most one hypothesis can be true; and
-`"exhaustive_pairwise_complement"` when exactly one listed hypothesis should be
-true.
+contradiction relations among the compared hypotheses. The
+`exclusivity=` argument controls the structural contract and **changes
+the posterior** because it changes which joint hypothesis states the
+factor graph allows:
+
+* `"exhaustive_pairwise_complement"` (**default**, 2 hypotheses only) —
+  exactly one of the listed hypotheses is true. Posterior odds equal
+  the (Cromwell-clamped) likelihood ratio; this is the standard
+  Bayesian model-selection contract. With three or more hypotheses
+  `compare()` raises `NotImplementedError` until an N-ary Exclusive
+  operator lands; pass `pairwise_contradiction` explicitly for now.
+* `"pairwise_contradiction"` — at most one listed hypothesis is true.
+  Pairwise odds are meaningful, but the listed marginals can sum to
+  less than one because the "all-false" joint state carries probability
+  mass. Use this when you do not believe your model set is exhaustive.
+
+`compare()` deduplicates against same-type external `exclusive(...)`
+or `contradict(...)` declarations covering the same hypothesis pair —
+if you have already declared the structural action upstream (with its
+own rationale and background), `compare()` skips emitting a second
+helper. Cross-type coexistence is allowed: an external `contradict()`
+plus an auto-emitted `exclusive()` is logically consistent
+(`Exclusive` implies `Contradict`), and the IR's structural-relation
+consistency checks govern legality of the combined graph.
 
 The example leaves the two hypotheses without external priors. Gaia then uses
 the maximum-entropy starting point subject to the declared exclusivity relation.
@@ -345,7 +363,7 @@ probabilistic, write down the probability model that justifies the update.
 | Empirical observations | `observe` | A measurement, data extraction, or reported fact grounds a claim | Yes. A zero-premise observation pins the claim near true |
 | Logical hard constraints | `derive`, `compute`, `decompose`, `equal`, `contradict`, `exclusive`, formula claims | If the premises are true, the conclusion or relation should follow as a matter of logic or definition | Yes. Lowered as deterministic factors |
 | Hand-written probabilistic soft constraints | `infer`, `associate` | You are directly committing to conditional probabilities or an association strength | Yes. Lowered as probabilistic factors |
-| Model-based Bayesian soft constraints | `bayes.model`, `bayes.likelihood` | The probabilities come from a statistical model, distribution, and observed data | Yes. Lowered to likelihood-style probabilistic factors and reviewable relations |
+| Model-based Bayesian soft constraints | `bayes.model`, `bayes.compare` | The probabilities come from a statistical model, distribution, and observed data | Yes. Lowered to likelihood-style probabilistic factors and reviewable relations |
 | Composed workflows | `@compose` | A Python function groups several actions into one named workflow | The child actions enter inference according to their own kinds |
 
 This split exists for a practical reason: reviewers and downstream users need
@@ -550,7 +568,7 @@ n = 395
 h_3_1 = parameter(theta, 0.75, describe="Mendelian 3:1 segregation.")
 h_null = parameter(theta, 0.5, describe="Null 1:1 segregation.")
 
-data = bayes.data(
+data = observe(
     k,
     value=295,
     rationale="F2 count table reports 295 dominant phenotypes.",
@@ -559,26 +577,25 @@ data = bayes.data(
 model_3_1 = bayes.model(
     h_3_1,
     observable=k,
-    distribution=bayes.Binomial(n=n, p=theta),
+    distribution=Binomial("k under Mendel 3:1", n=n, p=theta),
     rationale="If h_3_1 holds, k follows Binomial(n=395, p=0.75).",
 )
 model_null = bayes.model(
     h_null,
     observable=k,
-    distribution=bayes.Binomial(n=n, p=theta),
+    distribution=Binomial("k under null 1:1", n=n, p=theta),
     rationale="If h_null holds, k follows Binomial(n=395, p=0.5).",
 )
 
-bayes.likelihood(
+bayes.compare(
     data,
-    model=model_3_1,
-    against=[model_null],
+    models=[model_3_1, model_null],
     exclusivity="exhaustive_pairwise_complement",
     rationale="Compare the observed count under both hypotheses.",
 )
 ```
 
-Prefer `bayes.model(...)` + `bayes.likelihood(...)` over hand-written
+Prefer `bayes.model(...)` + `bayes.compare(...)` over hand-written
 `infer(...)` when you have a real likelihood function. It makes the model, the
 observable, the data, and the competing hypotheses explicit, which gives
 reviewers something concrete to inspect.
@@ -792,7 +809,7 @@ from gaia.engine.lang.compat import (
     setting, context,
     # operator helpers (replaced by relation verbs and formula AST)
     contradiction, equivalence, complement, disjunction,
-    # named-strategy DSL (replaced by derive / infer / bayes.likelihood)
+    # named-strategy DSL (replaced by derive / infer / bayes.compare)
     support, compare, deduction, abduction, induction,
     analogy, extrapolation, elimination, case_analysis,
     mathematical_induction, composite,
@@ -806,14 +823,14 @@ from gaia.engine.lang.compat import (
 | Legacy helper | v0.5 replacement | Notes |
 |---|---|---|
 | `setting(...)` / `context(...)` | `note(...)` | Background context only; never participates in BP. |
-| `support([P], C, prior=...)` | `derive(C, given=[P])` (deterministic) or `infer(P, hypothesis=C, p_e_given_h=..., p_e_given_not_h=...)` / `bayes.likelihood(...)` (probabilistic) | `P` is the evidence; `C` is the hypothesis whose belief gets updated. |
+| `support([P], C, prior=...)` | `derive(C, given=[P])` (deterministic) or `infer(P, hypothesis=C, p_e_given_h=..., p_e_given_not_h=...)` / `bayes.compare(...)` (probabilistic) | `P` is the evidence; `C` is the hypothesis whose belief gets updated. |
 | `deduction([P], C)` | `derive(C, given=[P])` | Strict logical entailment lowers to a hard conditional implication. |
-| `compare / abduction / induction / analogy / extrapolation / elimination / case_analysis / mathematical_induction` | Author the deterministic skeleton with `derive(...)` + relation verbs, or `bayes.likelihood(...)` for explicit Bayesian comparisons | Do not use these as shortcuts for uncertainty that hasn't been spelled out as claims. |
-| `composite(..., sub_strategies=[...])` | Plain `derive(...)` chains plus `@compose` for the workflow boundary | Sub-strategy priors are no longer the v0.5 surface for soft leaves; use `infer(...)` / `bayes.likelihood(...)` instead. |
+| `compare / abduction / induction / analogy / extrapolation / elimination / case_analysis / mathematical_induction` | Author the deterministic skeleton with `derive(...)` + relation verbs, or `bayes.compare(...)` for explicit Bayesian comparisons | Do not use these as shortcuts for uncertainty that hasn't been spelled out as claims. |
+| `composite(..., sub_strategies=[...])` | Plain `derive(...)` chains plus `@compose` for the workflow boundary | Sub-strategy priors are no longer the v0.5 surface for soft leaves; use `infer(...)` / `bayes.compare(...)` instead. |
 | `infer([premises], conclusion, ...)` (legacy positional) | `infer(evidence, hypothesis=..., given=..., p_e_given_h=..., p_e_given_not_h=...)` | The legacy positional form is preserved as a deprecated path; the keyword form is the v0.5 contract. |
 | `contradiction(a, b)` / `equivalence(a, b)` / `complement(a, b)` | `contradict(a, b)` / `equal(a, b)` / `exclusive(a, b)` | The relation-verb forms appear in review manifests and emit reviewable warrant helpers. |
 | `disjunction(*claims)` / `and_(...)` / `or_(...)` / `not_(...)` | `claim(..., formula=lor(...))` / `claim(..., formula=land(...))` / `claim(..., formula=lnot(...))`, or the dunder formula sugar `a \| b`, `a & b`, `~a` | Formula AST is the v0.5 way to express structural Boolean expressions; dunders now return Formula nodes, not legacy helper claims. |
-| `noisy_and(...)` | `derive(...)` for deterministic conjunction; `infer(...)` / `bayes.likelihood(...)` for probabilistic evidence aggregation | Currently delegates to legacy `support()`. |
+| `noisy_and(...)` | `derive(...)` for deterministic conjunction; `infer(...)` / `bayes.compare(...)` for probabilistic evidence aggregation | Currently delegates to legacy `support()`. |
 
 `fills(...)` (cross-package interface bridging) is still the v0.5 surface for
 declaring `local_hole`-resolving relations between packages. See
