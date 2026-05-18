@@ -202,7 +202,7 @@ def test_compare_allows_same_symbol_observation_with_same_unit() -> None:
     compiled = compile_package_artifact(pkg)
     cmp_id = compiled.knowledge_ids_by_object[id(cmp_result)]
     cmp_ir = next(k for k in compiled.graph.knowledges if k.id == cmp_id)
-    assert "comparison" in cmp_ir.metadata
+    assert "comparison" in (cmp_ir.metadata or {})
 
 
 def test_compare_rejects_same_symbol_same_label_custom_domains_with_different_members() -> None:

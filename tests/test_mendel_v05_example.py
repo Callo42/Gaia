@@ -141,6 +141,7 @@ def test_mendel_fixture_models_competing_theories_with_bayes_likelihood(tmp_path
         "kind": "variable",
         "symbol": "k_dominant",
         "domain": "Nat",
+        "unit": None,
     }
     # Noise-free observation: noise is None (no measurement-error Distribution
     # was supplied to observe(...)).
