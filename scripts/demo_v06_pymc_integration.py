@@ -198,15 +198,15 @@ def run_demo() -> dict[str, Any]:
             rationale=f"F2 dominant count {K_OBSERVED}/{N_TRIALS}.",
             label="f2_count_observation",
         )
-        mendel_pred = bayes.predict(
+        mendel_pred = bayes.model(
             mendel,
-            target=k_var,
+            observable=k_var,
             distribution=LangBinomial("k under Mendel 3:1", n=N_TRIALS, p=0.75),
             label="mendel_pred",
         )
-        diffuse_pred = bayes.predict(
+        diffuse_pred = bayes.model(
             diffuse,
-            target=k_var,
+            observable=k_var,
             distribution=LangBetaBinomial(
                 "k under Diffuse Uniform[0,1]", n=N_TRIALS, alpha=1.0, beta=1.0
             ),

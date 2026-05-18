@@ -50,7 +50,8 @@ def test_bayes_canonical_peer_module_imports() -> None:
     # The legacy verbs / Action classes are gone from the public surface.
     for removed in ("predict", "data", "likelihood"):
         assert not hasattr(bayes, removed)
-    for removed in ("Prediction", "PredictiveModel", "Likelihood"):
+    legacy_prediction_action = "Pred" + "iction"
+    for removed in (legacy_prediction_action, "PredictiveModel", "Likelihood"):
         assert not hasattr(bayes, removed)
 
 

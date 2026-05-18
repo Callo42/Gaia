@@ -71,7 +71,7 @@ Same concept ("measurement uncertainty"), two representations. Downstream consum
 ┌────────────────────────────────────────────────────────────────────────────┐
 │  gaia.engine.bayes  (hypothesis-comparison verbs)                          │
 │                                                                              │
-│   predict(hypothesis, target=, distribution=)     → predictive helper Claim │
+│   model(hypothesis, observable=, distribution=)     → predictive helper Claim │
 │   compare(data, models=[...])                     → comparison helper Claim │
 │   PrecomputedLikelihoods                          (Claim subclass for      │
 │                                                    external-solver results) │
@@ -89,7 +89,8 @@ Same concept ("measurement uncertainty"), two representations. Downstream consum
 ### 1.1 What is removed
 
 - `gaia.engine.bayes.Normal` (and every other distribution alias on the bayes namespace).
-- `gaia.engine.bayes.model(...)` → renamed to `predict(...)`, signature changed (see §3).
+- Earlier in-flight Bayes predict calls are replaced by
+  `gaia.engine.bayes.model(...)` with `observable=Variable` (see §3).
 - `gaia.engine.bayes.likelihood(...)` → renamed to `compare(...)`, signature changed (see §3).
 - `gaia.engine.bayes.data(...)` → folded into `observe(...)` (`gaia.engine.lang`). Removed.
 - Reading observation value from `claim.formula`. Lowering reads only `claim.metadata["observation"]`.
@@ -97,10 +98,11 @@ Same concept ("measurement uncertainty"), two representations. Downstream consum
 
 ### 1.2 What is preserved
 
-- The three-step paper narrative (predict → observe → compare).
-- The `PredictiveModel` / `Likelihood` Action subclasses (renamed: `Prediction` / `ModelComparison`).
+- The three-step paper narrative (model → observe → compare).
+- The `PredictiveModel` / `Likelihood` Action subclasses (renamed: `Model` / `ModelComparison`).
 - Cromwell clamp semantics on emitted infer factor.
-- Exclusivity policy (`"none"` / `"pairwise_contradiction"` / `"exhaustive_pairwise_complement"`).
+- Exclusivity policy for `"pairwise_contradiction"` / `"exhaustive_pairwise_complement"`;
+  the earlier `"none"` escape hatch is removed.
 - `precomputed=` escape hatch (now also accepts a `PrecomputedLikelihoods` Claim).
 - The Distribution Knowledge wrapper, unit-aware parameter handling, predicate operator overloading — all of `gaia/engine/lang/runtime/distribution.py` is unchanged.
 
@@ -154,23 +156,23 @@ Rules:
 
 `bayes.data(x, value=v, error=σ)` and the v0.5 `observe(Distribution, value=v, error=σ)` both unify on this schema. There is one writer (`observe()`), one reader.
 
-### 2.3 Prediction schema (one shape for all `predict(...)` calls)
+### 2.3 Model schema (one shape for all `model(...)` calls)
 
-`metadata["prediction"]` is the canonical container for the helper Claim returned by `predict(...)`:
+`metadata["model"]` is the canonical container for the helper Claim returned by `model(...)`:
 
 ```python
-metadata["prediction"] = {
+metadata["model"] = {
     "hypothesis": Claim,
-    "target": Variable | Distribution,
+    "observable": Variable,
     "distribution": Distribution,             # Knowledge node
-    "kind": "prediction",
+    "kind": "model",
 }
 ```
 
 Rules:
 
-1. `distribution` is always a `Distribution` Knowledge object. Reading the predictive mean is `pred.metadata["prediction"]["distribution"].params["mu"]`.
-2. Same `target` typing as `observation.target`, ensuring the comparator can match prediction-to-observation by Python identity of the target.
+1. `distribution` is always a `Distribution` Knowledge object. Reading the predictive mean is `pred.metadata["model"]["distribution"].params["mu"]`.
+2. `observable` is always a `Variable`, ensuring the comparator can match model-to-observation by Python identity of the observed Variable.
 
 ### 2.4 Unified reader
 
@@ -189,8 +191,8 @@ def _dist_param(claim: Claim, *, ns: str, key: str, param: str) -> Any | None:
 Likelihood evaluation no longer walks a formula AST and no longer serialises a noise dict. It calls:
 
 ```python
-mu     = _dist_param(pred,  ns="prediction",  key="distribution", param="mu")
-sigma  = _dist_param(pred,  ns="prediction",  key="distribution", param="sigma")
+mu     = _dist_param(pred,  ns="model",       key="distribution", param="mu")
+sigma  = _dist_param(pred,  ns="model",       key="distribution", param="sigma")
 value  = data.metadata["observation"]["value"]
 nsig   = _dist_param(data,  ns="observation", key="noise",        param="sigma")
 ```
@@ -201,13 +203,13 @@ All four come from one namespace shape.
 
 ## 3. User-facing API
 
-### 3.1 `predict`
+### 3.1 `model`
 
 ```python
-def predict(
+def model(
     hypothesis: Claim,
     *,
-    target: Variable | Distribution,
+    observable: Variable,
     distribution: Distribution,
     background: list[Knowledge] | None = None,
     rationale: str = "",
@@ -217,7 +219,7 @@ def predict(
     """Declare a predictive distribution for one hypothesis."""
 ```
 
-Returns the helper Claim. The helper carries `metadata["prediction"]` per §2.3. A `Prediction` Action (subclass of the existing `PredictiveModel`, renamed) attaches reasoning to the helper.
+Returns the helper Claim. The helper carries `metadata["model"]` per §2.3. A `Model` Action attaches reasoning to the helper.
 
 ### 3.2 `observe` (extended)
 
@@ -275,7 +277,7 @@ Differences from the legacy `bayes.likelihood` it replaces:
 
 | Legacy name        | Current name        | Reason                                                              |
 |--------------------|---------------------|---------------------------------------------------------------------|
-| `PredictiveModel`  | `Prediction`        | Aligns with verb `predict`; shorter; "predictive model" was overloaded |
+| `PredictiveModel`  | `Model`        | Aligns with the model verb; shorter; "predictive model" was overloaded |
 | `Likelihood`       | `ModelComparison`   | Aligns with verb `compare`; `Likelihood` is too generic              |
 | `BayesInference`   | `BayesInference`    | Unchanged. Marker base class                                         |
 
@@ -283,9 +285,9 @@ Action fields:
 
 ```python
 @dataclass
-class Prediction(BayesInference):
+class Model(BayesInference):
     hypothesis: Claim | None = None
-    target: Variable | Distribution | None = None
+    observable: Variable | None = None
     distribution: Distribution | None = None
     helper: Claim | None = None
 
@@ -299,7 +301,7 @@ class ModelComparison(BayesInference):
     log_likelihoods: dict[Claim, float] = field(default_factory=dict)
 ```
 
-Note `Prediction` carries `target` (typed `Variable | Distribution`) instead of the legacy `observable: Variable`, matching `observation.target`.
+Note `Model` carries `observable: Variable`; Distribution objects can still be observed directly through `observe(distribution, ...)`, but they are not model observables.
 
 ---
 
@@ -434,7 +436,7 @@ def mendel_log_marginals(
     )
 ```
 
-The rule: **if `predict(...)` was called with a fully-specified Distribution (no deferred `Variable` parameters), the wrapper should evaluate it analytically; if the predict distribution has deferred parameters bound to a prior in the hypothesis Claim, the wrapper should invoke the sampler.** Mixing both styles in one comparison is normal (Mendel: point hypothesis vs distribution-marginalised diffuse) and the wrapper's `if-else` is where the dispatch lives.
+The rule: **if `model(...)` was called with a fully-specified Distribution (no deferred `Variable` parameters), the wrapper should evaluate it analytically; if the model distribution has deferred parameters bound to a prior in the hypothesis Claim, the wrapper should invoke the sampler.** Mixing both styles in one comparison is normal (Mendel: point hypothesis vs distribution-marginalised diffuse) and the wrapper's `if-else` is where the dispatch lives.
 
 `gaia build check` does **not** detect this dispatch automatically — wrappers that accidentally feed a no-latent model to `pm.sample_smc` will fail at run time with the PPL's native error. That's an acceptable trade-off: the spec keeps Gaia out of the business of statically analysing external solver code.
 
@@ -456,16 +458,16 @@ def register_bayes_lowerer() -> None:
     ...
 ```
 
-The lowerer now dispatches on `Prediction` and `ModelComparison`. Internal helpers `_observation_value` / `_log_likelihood_with_noise` are replaced with the unified `_dist_param` reader of §2.4.
+The lowerer now dispatches on `Model` and `ModelComparison`. Internal helpers `_observation_value` / `_log_likelihood_with_noise` are replaced with the unified `_dist_param` reader of §2.4.
 
 ### 5.2 Likelihood evaluation
 
 ```python
-def _log_likelihood(prediction: Prediction, data: Claim) -> float:
+def _log_likelihood(model: Model, data: Claim) -> float:
     obs = data.metadata["observation"]
     value = obs["value"]
     noise = obs.get("noise")
-    distribution = _bind_distribution(prediction.distribution, prediction.hypothesis)
+    distribution = _bind_distribution(model.distribution, model.hypothesis)
 
     if noise is None:
         return _logp(distribution, value)
@@ -491,7 +493,7 @@ metadata = {
 }
 ```
 
-Old key `metadata["bayes"]` is gone. Authors and tools that previously read it now read `metadata["comparison"]` (for `compare` helpers) or `metadata["prediction"]` (for `predict` helpers).
+Old key `metadata["bayes"]` is gone. Authors and tools that previously read it now read `metadata["comparison"]` (for `compare` helpers) or `metadata["model"]` (for `model` helpers).
 
 ### 5.4 Structural Actions for exclusivity
 
@@ -503,13 +505,13 @@ Exclusivity emission: `Contradict` for `pairwise_contradiction`, `Exclusive` (or
 
 | Code                                          | Trigger                                                              |
 |-----------------------------------------------|----------------------------------------------------------------------|
-| `bayes:dangling-prediction`                   | Prediction helper never consumed by a `compare()`                    |
-| `bayes:unobserved-prediction-target`          | Prediction target Variable/Distribution has no `observe(...)`         |
+| `bayes:dangling-model`                   | Model helper never consumed by a `compare()`                         |
+| `bayes:unobserved-model-observable`      | Model observable Variable has no `observe(...)`                      |
 | `bayes:hypothesis-prior-coherence`            | Hypothesis priors don't sum sensibly given exclusivity                |
 | `bayes:comparison-without-data`               | `compare()` got no data Claims                                       |
 | `bayes:infer-comparison-overlap`              | Same hypothesis-evidence pair has both an `infer()` and a `compare()` |
 
-All five rules read the unified metadata schema (`metadata["prediction"]`, `metadata["observation"]`, `metadata["comparison"]`). Codes `bayes:comparison-without-data` and `bayes:infer-comparison-overlap` are renamed from the earlier `bayes:likelihood-*` codes in lock-step with the verb rename.
+All five rules read the unified metadata schema (`metadata["model"]`, `metadata["observation"]`, `metadata["comparison"]`). Codes `bayes:comparison-without-data` and `bayes:infer-comparison-overlap` are renamed from the earlier `bayes:likelihood-*` codes in lock-step with the verb rename.
 
 A new rule, implemented in [gaia/cli/commands/check.py](../../gaia/cli/commands/check.py) under `_check_v06_precomputed_solver_diagnostics`:
 
@@ -527,14 +529,14 @@ v0.5 ships this as a clean break from the earlier in-flight Bayes alpha. The lis
 
 ### 7.1 Examples that touched the legacy Bayes verbs
 
-- `examples/mendel-v0-5-gaia/src/mendel_v0_5/__init__.py` — quantitative comparison segment rewritten through `predict / compare / observe(Variable, ...)` (see §8 below).
+- `examples/mendel-v0-5-gaia/src/mendel_v0_5/__init__.py` — quantitative comparison segment rewritten through `model / compare / observe(Variable, ...)` (see §8 below).
 - (No other example uses Bayes verbs; Galileo is purely qualitative.)
 
 ### 7.2 Test suite
 
 - `tests/gaia/bayes/test_runtime_and_lowering.py` — rewritten to the new verb shape.
 - `tests/gaia/bayes/check/test_gaia_check_bayes.py` — rewritten + renamed codes.
-- `tests/gaia/bayes/test_public_surface.py` — expected export list trimmed to `predict` / `compare` / `PrecomputedLikelihoods`.
+- `tests/gaia/bayes/test_public_surface.py` — expected export list trimmed to `model` / `compare` / `PrecomputedLikelihoods`.
 - `tests/gaia/lang/test_observe_continuous.py` — extended to cover the `observe(Variable, value=, error=)` path.
 - `tests/gaia/bayes/test_v06_numeric_equivalence.py` — golden numeric tests (kept under the `v06` filename for git diff readability; the assertion content is "new surface == previous alpha surface").
 
@@ -551,8 +553,8 @@ For anyone using the in-flight alpha Bayes surface:
 -from gaia.engine.bayes import Normal, Binomial, BetaBinomial
 +from gaia.engine.lang  import Normal, Binomial, BetaBinomial
 
--pred = bayes.model(h, observable=k, distribution=bayes.Binomial(n=n, p=p))
-+pred = bayes.predict(h, target=k, distribution=Binomial("k under H", n=n, p=p))
+-model = bayes.model(h, observable=k, distribution=bayes.Binomial(n=n, p=p))
++model = bayes.model(h, observable=k, distribution=Binomial("k under H", n=n, p=p))
 
 -data = bayes.data(k, value=v, error=σ)
 +data = observe(k, value=v, error=σ)
@@ -588,16 +590,20 @@ mendel_count_likelihood = bayes.likelihood(
     f2_count_observation,
     model=mendel_count_model,
     against=[diffuse_count_model],
-    exclusivity="none",
     label="mendel_count_likelihood",
 )
 ```
+
+The earlier alpha briefly used `exclusivity="none"` as an escape hatch
+to suppress auto-emitted structural relations. The current surface
+rejects that value; declare the structural relation explicitly and let
+`compare()` deduplicate same-type relations.
 
 ### 8.2 v0.5 unified surface
 
 ```python
 from gaia.engine.lang import Binomial, BetaBinomial, observe
-from gaia.engine.bayes import predict, compare
+from gaia.engine.bayes import model, compare
 
 f2_count_data = observe(
     f2_dominant_count,
@@ -606,9 +612,9 @@ f2_count_data = observe(
     rationale="F2 dominant count = 295 out of 395.",
 )
 
-mendel_pred = predict(
+mendel_pred = model(
     mendelian_segregation_model,
-    target=f2_dominant_count,
+    observable=f2_dominant_count,
     distribution=Binomial(
         "F2 dominant count under Mendel 3:1",
         n=TOTAL_COUNT, p=MENDELIAN_DOMINANT_PROBABILITY,
@@ -616,9 +622,9 @@ mendel_pred = predict(
     label="mendel_pred",
 )
 
-diffuse_pred = predict(
+diffuse_pred = model(
     blending_inheritance_model,
-    target=f2_dominant_count,
+    observable=f2_dominant_count,
     distribution=BetaBinomial(
         "F2 dominant count under p ~ Uniform[0,1]",
         n=TOTAL_COUNT, alpha=1.0, beta=1.0,
@@ -641,7 +647,7 @@ cmp = compare(
 Two visible improvements:
 
 1. Each predictive distribution gets a human-readable content string ("F2 dominant count under Mendel 3:1") and a Knowledge identity. Review can comment on the distribution itself, not only on the wrapping Action.
-2. `observe()` and `predict()` and `compare()` all read like the same family of verb — same kwarg style, same notion of `target`.
+2. `model()`, `observe()`, and `compare()` all expose the measured quantity explicitly: `model(..., observable=variable)` declares the predictive observable, and `observe(variable, value=...)` records the data.
 
 ---
 
@@ -649,7 +655,7 @@ Two visible improvements:
 
 These four points are listed as the spec's authoritative defaults. PR review can flip any of them without rewriting the spec.
 
-1. **`bayes` namespace.** Predict and compare live at `gaia.engine.bayes`, not promoted to `gaia.engine.lang`. Rationale: `derive` / `observe` / `compute` are universal verbs; `predict` / `compare` are statistical, opt-in. (Default: **keep the namespace.**)
+1. **`bayes` namespace.** Model and compare live at `gaia.engine.bayes`, not promoted to `gaia.engine.lang`. Rationale: `derive` / `observe` / `compute` are universal verbs; `model` / `compare` are statistical, opt-in. (Default: **keep the namespace.**)
 2. **`observed=` inline sugar on Distribution factories.** Not provided. Authors must call `observe()` explicitly so the Observe Action is review-visible. (Default: **no sugar.**)
 3. **Noise convolution location.** Lowering-time convolution. Hierarchical-RV (`y_obs ~ Normal(y_true, σ_meas)`) is deferred to post-v0.5 because the BP backend is still discrete. (Default: **lowering-time convolve.**)
 4. **`compare(models=[...])` symmetry.** Equal-positioned list, no `model=` + `against=[...]` asymmetry. Authorial advocacy lives in Claim prior, not in the API. (Default: **symmetric list.**)
@@ -659,17 +665,17 @@ These four points are listed as the spec's authoritative defaults. PR review can
 ## 10. Acceptance checklist
 
 ```
-[x] gaia/engine/bayes/__init__.py exposes predict, compare, PrecomputedLikelihoods only
+[x] gaia/engine/bayes/__init__.py exposes model, compare, PrecomputedLikelihoods only
 [x] gaia/engine/bayes/distributions/ becomes a private implementation directory; no Normal / Binomial / ... exported
 [x] gaia/engine/lang exports Normal, Binomial, BetaBinomial, ... (BetaBinomial added)
 [x] observe(Variable, value=..., error=...) writes the unified metadata["observation"] schema
-[x] predict(...) writes the unified metadata["prediction"] schema
+[x] model(...) writes the unified metadata["model"] schema
 [x] compare(...) writes metadata["comparison"]; legacy metadata["bayes"] key on helpers removed
 [x] PrecomputedLikelihoods Claim subclass implemented; compare(precomputed=) accepts it
 [x] @compute decorator resolves PEP-563 string return annotations
 [x] PrecomputedLikelihoods.diagnostics mirrors onto metadata["diagnostics"] for IR introspection
 [x] bayes:precomputed-solver-diagnostics-missing check rule implemented
-[x] All check rules read v0.5 unified schema (metadata["prediction"] / ["observation"] / ["comparison"])
+[x] All check rules read v0.5 unified schema (metadata["model"] / ["observation"] / ["comparison"])
 [x] Lowering reads value / noise / distribution params through one helper (no formula-AST walk)
 [x] examples/mendel-v0-5-gaia rewritten
 [x] Numeric equivalence test passes (Mendel posterior, odds, comparison belief

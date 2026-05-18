@@ -13,7 +13,7 @@ quantity-with-predicate authoring style (`T_c > 77 K`).
 
 | You want to … | Verbs / types | Mental model |
 |---|---|---|
-| Compare competing parameter-value hypotheses (Mendel 3:1 vs 1:1, Galileo Model A vs Model B) | `predict(...) / observe(Variable, ...) / compare(...)` | Hypothesis comparison via likelihood ratios |
+| Compare competing parameter-value hypotheses (Mendel 3:1 vs 1:1, Galileo Model A vs Model B) | `model(...) / observe(Variable, ...) / compare(...)` | Hypothesis comparison via likelihood ratios |
 | Estimate a single uncertain quantity and ask threshold / simple equation questions (`T_c > 100 K`, `y == baseline + slope * x`) | `Distribution(...) > value` predicate proposition + `observe(distribution, value=, error=)` | Quantity with predicates via generated prior records and equation metadata |
 
 Both reach the same scipy-backed numeric backend
@@ -31,7 +31,7 @@ Gaia claims:
 
 1. `parameter(variable, value)` declares the hypothesis shape (one
    Variable taking one concrete value).
-2. `predict(hypothesis, target=..., distribution=...)` declares a
+2. `model(hypothesis, observable=..., distribution=...)` declares a
    predictive distribution helper Claim that ties a hypothesis to a
    named random variable's predictive shape.
 3. `observe(target, value=..., error=...)` records measured data with
@@ -42,8 +42,8 @@ Gaia claims:
    existing IR `infer` strategies plus structural exclusivity operators.
 
 The Bayes module adds no new IR knowledge types, BP factor types, or
-operator enums. `Prediction` and `ModelComparison` are `BayesInference`
-reasoning records; their helper Claims carry `metadata["prediction"]`
+operator enums. `Model` and `ModelComparison` are `BayesInference`
+reasoning records; their helper Claims carry `metadata["model"]`
 and `metadata["comparison"]` respectively. Both records go through the
 standard action lowering pipeline (see
 [knowledge-and-reasoning.md](knowledge-and-reasoning.md)), share the
@@ -83,7 +83,7 @@ likelihood `1 / (n + 1)`.
 
 ## Verbs at a Glance
 
-`predict` declares one predictive distribution helper Claim per
+`model` declares one predictive distribution helper Claim per
 hypothesis; `compare` declares a model-preference helper Claim that
 evaluates an equal-positioned list of predictive models against the
 same observation and emits the chosen exclusivity contract. The full
@@ -94,8 +94,6 @@ contract** below.
 
 `exclusivity` accepts:
 
-- `"none"` — no relation operators emitted; all listed hypotheses are
-  independent.
 - `"pairwise_contradiction"` (default) — listed hypotheses are *at most
   one true*; emits a reviewable `Contradict` action for each pair that
   does not already have one.
@@ -103,6 +101,11 @@ contract** below.
   one true*; emits a reviewable `Exclusive` action when there are two
   hypotheses, or pairwise `Contradict` actions plus a clamped
   disjunction helper when there are three or more.
+
+`"none"` is rejected. The earlier escape hatch for suppressing
+auto-emitted relations was removed; write the structural relation
+explicitly and `compare()` will deduplicate same-type relations that
+already exist.
 
 All emitted relation actions are auto-generated only when the
 equivalent explicit author action does not already exist; this lets the
@@ -128,15 +131,15 @@ try:
     h_3_1 = parameter(theta, 0.75, content="theta = 0.75.", prior=0.5, label="h_3_1")
     h_null = parameter(theta, 0.5, content="theta = 0.5.", prior=0.5, label="h_null")
     data = observe(k, value=295, label="data", rationale="Observed k = 295.")
-    model_3_1 = bayes.predict(
+    model_3_1 = bayes.model(
         h_3_1,
-        target=k,
+        observable=k,
         distribution=Binomial("k under 3:1", n=395, p=theta),
         label="f2_model_3_1",
     )
-    model_null = bayes.predict(
+    model_null = bayes.model(
         h_null,
-        target=k,
+        observable=k,
         distribution=Binomial("k under null", n=395, p=theta),
         label="f2_model_null",
     )
@@ -212,12 +215,14 @@ claim at `metadata["comparison"]["likelihoods"]`.
 
 Exclusivity is structural:
 
-- `"none"` emits no relation operators.
 - `"pairwise_contradiction"` creates reviewable pairwise `Contradict`
   actions when they do not already exist.
 - `"exhaustive_pairwise_complement"` creates a reviewable `Exclusive`
   action for two hypotheses, or pairwise `Contradict` actions plus a
   clamped disjunction helper for three or more.
+
+The previous `"none"` escape hatch is rejected; explicit structural
+relations are deduplicated instead.
 
 All of these are rigid operators. Probability lives only in claim
 priors and `infer` CPTs.
@@ -302,10 +307,10 @@ detect this dispatch automatically.
 
 `gaia build check` reports Bayes-specific diagnostics:
 
-- `bayes:dangling-prediction` — a `predict(...)` helper not consumed by
+- `bayes:dangling-model` — a `model(...)` helper not consumed by
   any `compare(...)`.
-- `bayes:unobserved-prediction-target` — a `predict(...)` target with
-  no matching `observe(target, value=...)` call.
+- `bayes:unobserved-model-observable` — a model observable Variable with
+  no matching `observe(observable, value=...)` call.
 - `bayes:hypothesis-prior-coherence` — listed hypothesis priors don't
   sum sensibly for the chosen exclusivity.
 - `bayes:comparison-without-data` — `compare(...)` data Claim has no
@@ -515,7 +520,7 @@ for identity checks, not `dist_a == dist_b`.
 
 A rough decision rule:
 
-- **Use `predict / compare`** when your scientific question is "*which
+- **Use `model / compare`** when your scientific question is "*which
   of these pre-specified parameter values is most consistent with the
   data?*". Examples: Mendel 3:1 vs 1:1, Galileo Model A (weight-speed)
   vs Model B (medium resistance), Higgs vs no-Higgs.
@@ -554,12 +559,12 @@ capture. They are non-fatal — packages compile successfully.
 
 ## Source code
 
-- `gaia/engine/bayes/dsl/predict.py`, `dsl/compare.py` — verbs.
-- `gaia/engine/bayes/runtime/actions.py` — `Prediction` /
+- `gaia/engine/bayes/dsl/model.py`, `dsl/compare.py` — verbs.
+- `gaia/engine/bayes/runtime/actions.py` — `Model` /
   `ModelComparison` Action classes.
 - `gaia/engine/bayes/runtime/precomputed.py` — `PrecomputedLikelihoods`.
 - `gaia/engine/bayes/compiler/lower.py` — single lowering pass through
-  one unified reader for prediction / observation / comparison
+  one unified reader for model / observation / comparison
   metadata.
 - `gaia/engine/bayes/distributions/` (internal) — scipy-backed pydantic
   `_BaseDistribution` implementations.

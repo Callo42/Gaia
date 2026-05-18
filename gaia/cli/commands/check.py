@@ -324,11 +324,11 @@ def _node_name(node: dict[str, Any] | None, fallback: str | None = None) -> str:
     return str(node.get("label") or node.get("id") or fallback or "<unknown>")
 
 
-def _prediction_metadata(node: dict[str, Any]) -> dict[str, Any]:
-    """Return the ``metadata["prediction"]`` payload (empty dict if absent)."""
+def _model_metadata(node: dict[str, Any]) -> dict[str, Any]:
+    """Return the ``metadata["model"]`` payload (empty dict if absent)."""
     metadata = node.get("metadata") or {}
-    prediction = metadata.get("prediction") or {}
-    return prediction if isinstance(prediction, dict) else {}
+    model = metadata.get("model") or {}
+    return model if isinstance(model, dict) else {}
 
 
 def _comparison_metadata(node: dict[str, Any]) -> dict[str, Any]:
@@ -341,13 +341,12 @@ def _comparison_metadata(node: dict[str, Any]) -> dict[str, Any]:
 def _bayes_role(node: dict[str, Any]) -> str | None:
     """Detect a Bayes role on a knowledge node via the unified metadata schema.
 
-    ``metadata["prediction"]["kind"] == "prediction"`` is the marker written
-    by :func:`gaia.engine.bayes.predict`; ``metadata["comparison"]["kind"]
-    == "comparison"`` is the marker written by
-    :func:`gaia.engine.bayes.compare`.
+    ``metadata["model"]["kind"] == "model"`` is the marker written by
+    :func:`gaia.engine.bayes.model`; ``metadata["comparison"]["kind"] ==
+    "comparison"`` is the marker written by :func:`gaia.engine.bayes.compare`.
     """
-    if _prediction_metadata(node).get("kind") == "prediction":
-        return "prediction"
+    if _model_metadata(node).get("kind") == "model":
+        return "model"
     if _comparison_metadata(node).get("kind") == "comparison":
         return "comparison"
     return None
@@ -386,7 +385,7 @@ def _hypothesis_prior(node: dict[str, Any] | None) -> float:
 
 
 def _bayes_referenced_models(comparisons: dict[str, dict[str, Any]]) -> set[str]:
-    """Return prediction-helper ids referenced by ``compare()`` calls.
+    """Return model-helper ids referenced by ``compare()`` calls.
 
     Reads the unified ``metadata["comparison"]["models"]`` list written by
     :func:`gaia.engine.bayes.compare`.
@@ -399,93 +398,134 @@ def _bayes_referenced_models(comparisons: dict[str, dict[str, Any]]) -> set[str]
     return referenced
 
 
-def _bayes_observed_targets(nodes: dict[str, dict[str, Any]]) -> set[str]:
-    """Return Variable symbols (and Distribution labels) of observed targets.
+_JsonScalar = str | int | float | bool | None
+_ObservableKey = tuple[
+    str,
+    str | None,
+    str | None,
+    str | None,
+    str | None,
+    tuple[_JsonScalar, ...] | None,
+]
+
+
+def _bayes_observed_observables(nodes: dict[str, dict[str, Any]]) -> set[_ObservableKey]:
+    """Return observed Variable descriptor keys for model observables.
 
     The unified ``observe(...)`` schema stores the target descriptor at
     ``metadata["observation"]["target"]``. For a Variable target this is
-    ``{"kind": "variable", "symbol": ..., "domain": ...}``; for a
-    Distribution target it is ``{"kind": "distribution", "label": ...,
-    "family": ...}``. We index both forms by their human-facing
-    identifier so the prediction-target check can verify each prediction
-    has a corresponding observe(...).
+    keyed by ``kind``, ``symbol``, ``domain``, ``unit``, and, for custom
+    Domain-backed Variables, ``domain_content`` plus ``domain_members``.
+    Bayes model observables are Variables, so Distribution observations
+    are ignored for this model-observable check.
     """
-    symbols: set[str] = set()
+    observables: set[_ObservableKey] = set()
     for node in nodes.values():
         observation = _observation_metadata(node)
-        target = observation.get("target")
-        if not isinstance(target, dict):
-            continue
-        if target.get("kind") == "variable":
-            symbol = target.get("symbol")
-            if isinstance(symbol, str):
-                symbols.add(symbol)
-        elif target.get("kind") == "distribution":
-            label = target.get("label")
-            if isinstance(label, str):
-                symbols.add(label)
-    return symbols
+        key = _observable_descriptor_key(observation.get("target"))
+        if key is not None:
+            observables.add(key)
+    return observables
 
 
-def _check_bayes_prediction(
+def _check_bayes_model(
     *,
     ir: dict[str, Any],
-    prediction_id: str,
-    prediction: dict[str, Any],
+    model_id: str,
+    model: dict[str, Any],
     referenced_models: set[str],
-    observed_targets: set[str],
+    observed_observables: set[_ObservableKey],
     diagnostics: _BayesCheckDiagnostics,
 ) -> None:
-    """Append diagnostics for one Bayes prediction node."""
-    prediction_name = _node_name(prediction)
-    if _is_local_ir_id(ir, prediction_id) and prediction_id not in referenced_models:
+    """Append diagnostics for one Bayes model node."""
+    model_name = _node_name(model)
+    if _is_local_ir_id(ir, model_id) and model_id not in referenced_models:
         diagnostics.warnings.append(
-            "bayes:dangling-prediction: "
-            f"prediction {prediction_name} is never referenced by compare(). "
+            "bayes:dangling-model: "
+            f"model {model_name} is never referenced by compare(). "
             "Fix: add bayes.compare(data, models=[...]) or remove the "
-            "unused prediction."
+            "unused model."
         )
 
-    identifier = _target_descriptor_identifier(_prediction_metadata(prediction).get("target"))
+    observable = _model_metadata(model).get("observable")
+    key = _observable_descriptor_key(observable)
     if (
-        _is_local_ir_id(ir, prediction_id)
-        and isinstance(identifier, str)
-        and identifier not in observed_targets
+        _is_local_ir_id(ir, model_id)
+        and key is not None
+        and key not in observed_observables
     ):
         diagnostics.warnings.append(
-            "bayes:unobserved-prediction-target: "
-            f"prediction {prediction_name} target {identifier!r} has no "
-            "matching observe(...) call. Fix: add observe(target, value=...) "
-            "for the measured Variable or Distribution, or remove the unused prediction."
+            "bayes:unobserved-model-observable: "
+            f"model {model_name} observable {_observable_descriptor_label(observable)} has no "
+            "matching observe(...) call. Fix: add observe(observable, value=...) "
+            "for the measured Variable, or remove the unused model."
         )
 
 
-def _target_descriptor_identifier(target: Any) -> str | None:
-    """Extract the Variable symbol or Distribution label from a target descriptor.
+def _observable_descriptor_key(observable: Any) -> _ObservableKey | None:
+    """Extract a strict Variable descriptor key from model/observation metadata.
 
-    The unified ``metadata["prediction"]["target"]`` and
-    ``metadata["observation"]["target"]`` payloads share the
-    ``{"kind": "variable", "symbol": ...}`` / ``{"kind": "distribution",
-    "label": ...}`` shape; this helper picks the human-facing identifier
-    so the comparison-data check can compare prediction-target vs
-    observation-target by name.
+    ``metadata["model"]["observable"]`` and
+    ``metadata["observation"]["target"]`` use
+    ``{"kind": "variable", "symbol": ..., "domain": ..., "unit": ...}``.
+    Custom Domain descriptors also carry ``domain_content`` and
+    ``domain_members`` so same-label user domains with different members
+    do not collapse together. This helper intentionally accepts only
+    Variable descriptors because Bayes model observables are Variables.
     """
-    if not isinstance(target, dict):
+    if not isinstance(observable, dict):
         return None
-    if target.get("kind") == "variable":
-        symbol = target.get("symbol")
-        return symbol if isinstance(symbol, str) else None
-    if target.get("kind") == "distribution":
-        label = target.get("label")
-        return label if isinstance(label, str) else None
-    return None
+    if observable.get("kind") != "variable":
+        return None
+    symbol = observable.get("symbol")
+    if not isinstance(symbol, str):
+        return None
+    domain = observable.get("domain")
+    unit = observable.get("unit")
+    domain_content = observable.get("domain_content")
+    domain_members = observable.get("domain_members")
+    return (
+        "variable",
+        symbol,
+        domain if isinstance(domain, str) else None,
+        unit if isinstance(unit, str) else None,
+        domain_content if isinstance(domain_content, str) else None,
+        _json_scalar_tuple(domain_members) if isinstance(domain_members, list) else None,
+    )
+
+
+def _json_scalar_tuple(values: list[Any]) -> tuple[_JsonScalar, ...]:
+    result: list[_JsonScalar] = []
+    for value in values:
+        if isinstance(value, str | int | float | bool) or value is None:
+            result.append(value)
+        else:
+            result.append(repr(value))
+    return tuple(result)
+
+
+def _observable_descriptor_label(observable: Any) -> str:
+    if not isinstance(observable, dict):
+        return repr(observable)
+    if observable.get("kind") == "variable":
+        return repr(
+            {
+                "kind": "variable",
+                "symbol": observable.get("symbol"),
+                "domain": observable.get("domain"),
+                "unit": observable.get("unit"),
+                "domain_content": observable.get("domain_content"),
+                "domain_members": observable.get("domain_members"),
+            }
+        )
+    return repr(observable)
 
 
 def _check_bayes_comparison_data(
     *,
     comparison_name: str,
     comparison: dict[str, Any],
-    model_prediction: dict[str, Any],
+    model_payload: dict[str, Any],
     nodes: dict[str, dict[str, Any]],
     diagnostics: _BayesCheckDiagnostics,
 ) -> None:
@@ -493,12 +533,13 @@ def _check_bayes_comparison_data(
 
     Reads the unified ``metadata["comparison"]["data"]`` list and verifies
     each referenced Claim carries a ``metadata["observation"]`` payload
-    with at least a ``value`` field, and that its target matches the
-    prediction target by symbol / label. The unified schema stores value
-    and target inline as metadata so the check is a direct dictionary
-    lookup.
+    with at least a ``value`` field, and that its target descriptor
+    matches the model observable descriptor by symbol, domain, unit, and
+    custom-domain structure. The unified schema stores value and target
+    inline as metadata so the check is a direct dictionary lookup.
     """
-    expected_identifier = _target_descriptor_identifier(model_prediction.get("target"))
+    expected_observable = model_payload.get("observable")
+    expected_key = _observable_descriptor_key(expected_observable)
 
     for data_id in comparison.get("data") or []:
         if not isinstance(data_id, str):
@@ -508,7 +549,7 @@ def _check_bayes_comparison_data(
             diagnostics.errors.append(
                 "bayes:comparison-without-data: "
                 f"compare {comparison_name} references missing data {data_id}. "
-                "Fix: pass an observe(target, value=...) Claim that is compiled "
+                "Fix: pass an observe(observable, value=...) Claim that is compiled "
                 "with the package."
             )
             continue
@@ -518,23 +559,21 @@ def _check_bayes_comparison_data(
                 "bayes:comparison-without-data: "
                 f"compare {comparison_name} references data {_node_name(data_node)} "
                 "without a metadata['observation'] payload. Fix: use "
-                "observe(target, value=...) so the data Claim carries the unified "
+                "observe(observable, value=...) so the data Claim carries the unified "
                 "observation schema, or pass precomputed likelihoods with a "
                 "reviewable observation Claim."
             )
             continue
-        observed_identifier = _target_descriptor_identifier(observation.get("target"))
-        if (
-            expected_identifier is not None
-            and isinstance(observed_identifier, str)
-            and observed_identifier != expected_identifier
-        ):
+        observed_observable = observation.get("target")
+        observed_key = _observable_descriptor_key(observed_observable)
+        if expected_key is not None and observed_key != expected_key:
             diagnostics.errors.append(
                 "bayes:comparison-without-data: "
                 f"compare {comparison_name} references data {_node_name(data_node)} "
-                f"whose target {observed_identifier!r} does not match the "
-                f"prediction target {expected_identifier!r}. Fix: pass an "
-                "observe(target, value=...) Claim for the prediction's target."
+                f"whose observable {_observable_descriptor_label(observed_observable)} "
+                "does not match the model observable "
+                f"{_observable_descriptor_label(expected_observable)}. Fix: pass an "
+                "observe(observable, value=...) Claim for the model's observable."
             )
 
 
@@ -702,28 +741,26 @@ def _check_bayes_infer_overlap(
 def _bayes_check_diagnostics(ir: dict[str, Any]) -> _BayesCheckDiagnostics:
     diagnostics = _BayesCheckDiagnostics()
     nodes = {node["id"]: node for node in ir.get("knowledges", []) if node.get("id")}
-    predictions = {
-        node_id: node for node_id, node in nodes.items() if _bayes_role(node) == "prediction"
-    }
+    models = {node_id: node for node_id, node in nodes.items() if _bayes_role(node) == "model"}
     comparisons = {
         node_id: node for node_id, node in nodes.items() if _bayes_role(node) == "comparison"
     }
 
     referenced_models = _bayes_referenced_models(comparisons)
-    observed_targets = _bayes_observed_targets(nodes)
+    observed_observables = _bayes_observed_observables(nodes)
 
     _check_v06_precomputed_solver_diagnostics(
         nodes=nodes,
         diagnostics=diagnostics,
     )
 
-    for prediction_id, prediction in predictions.items():
-        _check_bayes_prediction(
+    for model_id, model in models.items():
+        _check_bayes_model(
             ir=ir,
-            prediction_id=prediction_id,
-            prediction=prediction,
+            model_id=model_id,
+            model=model,
             referenced_models=referenced_models,
-            observed_targets=observed_targets,
+            observed_observables=observed_observables,
             diagnostics=diagnostics,
         )
 
@@ -731,17 +768,21 @@ def _bayes_check_diagnostics(ir: dict[str, Any]) -> _BayesCheckDiagnostics:
         comparison_payload = _comparison_metadata(comparison)
         comparison_name = _node_name(comparison)
         # The compare() lowering emits an equal-positioned ``models`` list;
-        # using the first as the "anchor" for the prediction-target check
-        # is sufficient because compare() validates target identity across
+        # using the first as the "anchor" for the model-observable check
+        # is sufficient because compare() validates observable identity across
         # the whole list at construction time.
-        models = comparison_payload.get("models") or []
-        first_model = nodes.get(models[0]) if models and isinstance(models[0], str) else None
-        first_prediction = _prediction_metadata(first_model) if first_model is not None else {}
+        comparison_models = comparison_payload.get("models") or []
+        first_model = (
+            nodes.get(comparison_models[0])
+            if comparison_models and isinstance(comparison_models[0], str)
+            else None
+        )
+        first_model_payload = _model_metadata(first_model) if first_model is not None else {}
 
         _check_bayes_comparison_data(
             comparison_name=comparison_name,
             comparison=comparison_payload,
-            model_prediction=first_prediction,
+            model_payload=first_model_payload,
             nodes=nodes,
             diagnostics=diagnostics,
         )

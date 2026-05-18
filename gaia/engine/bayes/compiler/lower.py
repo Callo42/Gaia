@@ -11,9 +11,9 @@ What this module owns:
   (knowledge IDs in place of runtime object references).
 * ``ModelComparison`` actions emit one ``infer`` strategy per hypothesis
   whose CPT is ``[0.5, clamp(LR_i)]`` with ``LR_i = exp(logL_i - logL_max)``.
-* Exclusivity contracts ("pairwise_contradiction" /
-  "exhaustive_pairwise_complement" / "none") emit Structural Actions and
-  the clamped Disjunction helper operator for ≥3 hypotheses.
+* Supported exclusivity contracts ("pairwise_contradiction" /
+  "exhaustive_pairwise_complement") emit Structural Actions. The
+  earlier "none" escape hatch is rejected by the DSL.
 
 What this module does NOT own:
 
@@ -160,12 +160,16 @@ def _model_metadata(
 
 def _observable_descriptor(observable: Variable) -> dict[str, Any]:
     domain = getattr(observable.domain, "name", None) or getattr(observable.domain, "label", None)
-    return {
+    descriptor: dict[str, Any] = {
         "kind": "variable",
         "symbol": observable.symbol,
         "domain": domain,
         "unit": observable.unit,
     }
+    if isinstance(observable.domain, Domain):
+        descriptor["domain_content"] = observable.domain.content
+        descriptor["domain_members"] = list(observable.domain.members)
+    return descriptor
 
 
 # ---------------------------------------------------------------------------

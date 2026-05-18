@@ -53,12 +53,12 @@ h_b = parameter(theta, 0.7, label="h_b", prior=0.5)
 
 data = observe(k_var, value=3, label="data", rationale="Observed k = 3.")
 
-pred_a = bayes.predict(
-    h_a, target=k_var, distribution=Binomial("k under a", n=5, p=theta),
+pred_a = bayes.model(
+    h_a, observable=k_var, distribution=Binomial("k under a", n=5, p=theta),
     label="pred_a",
 )
-pred_b = bayes.predict(
-    h_b, target=k_var, distribution=Binomial("k under b", n=5, p=theta),
+pred_b = bayes.model(
+    h_b, observable=k_var, distribution=Binomial("k under b", n=5, p=theta),
     label="pred_b",
 )
 

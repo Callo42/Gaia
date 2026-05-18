@@ -218,7 +218,7 @@ premise, model that premise as a separate claim.
 
 ### Bayes hypothesis comparison
 
-Use `bayes.predict(...)` and `bayes.compare(...)` when the problem is not
+Use `bayes.model(...)` and `bayes.compare(...)` when the problem is not
 "what is the probability this quantity exceeds a threshold?" but rather "which
 hypothesis predicts the observed data better?"
 
@@ -239,15 +239,15 @@ data = observe(
     rationale="F2 count table reports 295 dominant phenotypes.",
 )
 
-model_3_1 = bayes.predict(
+model_3_1 = bayes.model(
     h_3_1,
-    target=k,
+    observable=k,
     distribution=Binomial("k under Mendel 3:1", n=n, p=theta),
     rationale="If h_3_1 holds, k follows Binomial(n=395, p=0.75).",
 )
-model_null = bayes.predict(
+model_null = bayes.model(
     h_null,
-    target=k,
+    observable=k,
     distribution=Binomial("k under null 1:1", n=n, p=theta),
     rationale="If h_null holds, k follows Binomial(n=395, p=0.5).",
 )
@@ -260,7 +260,7 @@ comparison = bayes.compare(
 )
 ```
 
-`bayes.predict(...)` returns a predictive-model helper claim. `bayes.compare(...)`
+`bayes.model(...)` returns a predictive-model helper claim. `bayes.compare(...)`
 returns a comparison helper claim and can also emit reviewable exclusivity or
 contradiction relations among the compared hypotheses. The
 `exclusivity=` argument controls the structural contract and **changes
@@ -363,7 +363,7 @@ probabilistic, write down the probability model that justifies the update.
 | Empirical observations | `observe` | A measurement, data extraction, or reported fact grounds a claim | Yes. A zero-premise observation pins the claim near true |
 | Logical hard constraints | `derive`, `compute`, `decompose`, `equal`, `contradict`, `exclusive`, formula claims | If the premises are true, the conclusion or relation should follow as a matter of logic or definition | Yes. Lowered as deterministic factors |
 | Hand-written probabilistic soft constraints | `infer`, `associate` | You are directly committing to conditional probabilities or an association strength | Yes. Lowered as probabilistic factors |
-| Model-based Bayesian soft constraints | `bayes.predict`, `bayes.compare` | The probabilities come from a statistical model, distribution, and observed data | Yes. Lowered to likelihood-style probabilistic factors and reviewable relations |
+| Model-based Bayesian soft constraints | `bayes.model`, `bayes.compare` | The probabilities come from a statistical model, distribution, and observed data | Yes. Lowered to likelihood-style probabilistic factors and reviewable relations |
 | Composed workflows | `@compose` | A Python function groups several actions into one named workflow | The child actions enter inference according to their own kinds |
 
 This split exists for a practical reason: reviewers and downstream users need
@@ -574,15 +574,15 @@ data = observe(
     rationale="F2 count table reports 295 dominant phenotypes.",
 )
 
-model_3_1 = bayes.predict(
+model_3_1 = bayes.model(
     h_3_1,
-    target=k,
+    observable=k,
     distribution=Binomial("k under Mendel 3:1", n=n, p=theta),
     rationale="If h_3_1 holds, k follows Binomial(n=395, p=0.75).",
 )
-model_null = bayes.predict(
+model_null = bayes.model(
     h_null,
-    target=k,
+    observable=k,
     distribution=Binomial("k under null 1:1", n=n, p=theta),
     rationale="If h_null holds, k follows Binomial(n=395, p=0.5).",
 )
@@ -595,9 +595,9 @@ bayes.compare(
 )
 ```
 
-Prefer `bayes.predict(...)` + `bayes.compare(...)` over hand-written
+Prefer `bayes.model(...)` + `bayes.compare(...)` over hand-written
 `infer(...)` when you have a real likelihood function. It makes the model, the
-target, the data, and the competing hypotheses explicit, which gives
+observable, the data, and the competing hypotheses explicit, which gives
 reviewers something concrete to inspect.
 
 ### Return values and priors

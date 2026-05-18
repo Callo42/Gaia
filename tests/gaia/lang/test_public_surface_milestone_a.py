@@ -76,10 +76,10 @@ def test_gaia_lang_does_not_export_marker_only_causal_surface():
     assert not hasattr(lang.ClaimKind, "CAUSAL")
 
 
-def test_bayes_surface_exposes_predict_and_compare_verbs():
-    """The unified v0.5 Bayes surface is ``predict`` + ``compare`` + ``PrecomputedLikelihoods``.
+def test_bayes_surface_exposes_model_and_compare_verbs():
+    """The unified v0.5 Bayes surface is ``model`` + ``compare`` + ``PrecomputedLikelihoods``.
 
-    The earlier in-flight alpha exposed ``bayes.model`` / ``bayes.likelihood``
+    The earlier in-flight alpha exposed ``bayes.likelihood``
     / ``bayes.data`` plus typed-value ``bayes.Normal`` / ``bayes.Binomial``
     distribution aliases. The clean break (see
     ``docs/specs/2026-05-17-bayes-unified-design.md``) replaces all of
@@ -88,17 +88,17 @@ def test_bayes_surface_exposes_predict_and_compare_verbs():
     """
     import gaia.engine.bayes as bayes
 
-    assert hasattr(bayes, "predict")
+    assert hasattr(bayes, "model")
     assert hasattr(bayes, "compare")
     assert hasattr(bayes, "PrecomputedLikelihoods")
-    assert "predict" in bayes.__all__
+    assert "model" in bayes.__all__
     assert "compare" in bayes.__all__
     assert "PrecomputedLikelihoods" in bayes.__all__
 
     # Legacy verbs are gone — no compatibility shim.
-    for removed in ("model", "likelihood", "data"):
+    for removed in ("predict", "likelihood", "data"):
         assert not hasattr(bayes, removed), (
-            f"gaia.engine.bayes.{removed} should be gone; use predict / compare / observe instead"
+            f"gaia.engine.bayes.{removed} should be gone; use model / compare / observe instead"
         )
 
     # Typed-value distribution re-exports are gone — use gaia.engine.lang.
@@ -115,7 +115,7 @@ def test_gaia_lang_import_does_not_eagerly_import_bayes():
         "print('gaia.engine.bayes' in sys.modules)\n"
         "print('scipy' in sys.modules)\n"
         "import gaia.engine.bayes as bayes\n"
-        "print(hasattr(bayes, 'predict'))\n"
+        "print(hasattr(bayes, 'model'))\n"
     )
     result = subprocess.run(
         [sys.executable, "-c", code],

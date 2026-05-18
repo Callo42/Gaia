@@ -150,7 +150,7 @@ Bayesian update: given a hypothesis Claim `H`, evidence Claim `E`, and explicit 
 - With `given=G`: factor uses premises `[H, *G]`. When any of `G` is false, the CPT entry collapses to `0.5` (the soft-implication baseline) — the relation becomes neutral when its enabling preconditions are not in force. This is the *infer-with-given gating* contract introduced in v0.5.
 - `p_e_given_h` and `p_e_given_not_h` may be a literal float **or** a Claim whose first numeric `parameter("value", ...)` is read at compile time.
 
-Returns the evidence Claim. The author should prefer `bayes.predict(...) + bayes.compare(...)` (see [§6 Bayes Module](#6-bayes-module)) when the probability is an instance of a predictive distribution.
+Returns the evidence Claim. The author should prefer `bayes.model(...) + bayes.compare(...)` (see [§6 Bayes Module](#6-bayes-module)) when the probability is an instance of a predictive distribution.
 
 #### `associate(a, b, *, p_a_given_b, p_b_given_a, pattern=None, ...)`
 
@@ -304,12 +304,12 @@ Schema reference: `docs/specs/2026-05-04-claim-formula-schema-design.md`.
 `gaia.engine.bayes` provides the lifted authoring surface for model-data likelihood updates:
 
 - **Distribution Knowledge factories.** `Normal("T_c", mu=..., sigma=...)`, `Binomial("k", n=..., p=...)`, etc., imported from `gaia.engine.lang`. They are `Distribution(Knowledge)` nodes with identity, label, and provenance; the scipy-backed pydantic backend at `gaia.engine.bayes.distributions` is internal.
-- **`bayes.predict(hypothesis, target=..., distribution=...)`.** Returns a predictive-model helper Claim backed by a `Prediction(BayesInference)` record that ties one hypothesis Claim to one predictive distribution over a Variable or Distribution target.
+- **`bayes.model(hypothesis, observable=..., distribution=...)`.** Returns a predictive-model helper Claim backed by a `Model(BayesInference)` record that ties one hypothesis Claim to one predictive distribution over a Variable observable.
 - **`observe(target, value=..., error=...)`.** Polymorphic on `Variable | Distribution | Claim`; the Variable / Distribution paths write the unified `metadata["observation"]` schema consumable by `bayes.compare(...)`. Scalar `error` is sugared into an anonymous `Normal(mu=0, sigma=error)` noise Distribution.
 - **`bayes.compare(data, models=[...], exclusivity=...)`.** Returns a model-preference helper Claim backed by a `ModelComparison(BayesInference)` record. The equal-positioned `models` list replaces the earlier `model=` + `against=[...]` asymmetry. `exclusivity` defaults to `"exhaustive_pairwise_complement"` (2 hypotheses only — strict Bayesian model-selection contract); pass `"pairwise_contradiction"` for at-most-one semantics (open-world model sets). `compare()` deduplicates against same-type external `exclusive(...)` / `contradict(...)` declarations covering the same hypothesis pair, so externally-declared structural actions are honoured without explicit opt-out flags. Lowers to `infer` strategies plus the structural-action operators that encode the chosen contract.
 - **`PrecomputedLikelihoods` Claim subclass.** Audit-bearing return type for `@compute`-wrapped external solvers (PyMC / Stan / NumPyro / scipy quadrature / ...). `compare(precomputed=PrecomputedLikelihoods(...))` reads its `log_likelihoods` table into the infer factors.
 
-`bayes.predict / bayes.compare` helper records go through the standard action lowering pipeline ([§4](#4-action-lowering)); they share the `action_label_map` table and emit helper Claims that the reviewer sees. See [bayes.md](bayes.md) for the executable Mendel example, the full distribution list, the external-solver wrapper pattern, and `gaia build check` diagnostics.
+`bayes.model / bayes.compare` helper records go through the standard action lowering pipeline ([§4](#4-action-lowering)); they share the `action_label_map` table and emit helper Claims that the reviewer sees. See [bayes.md](bayes.md) for the executable Mendel example, the full distribution list, the external-solver wrapper pattern, and `gaia build check` diagnostics.
 
 Spec reference: `docs/specs/2026-05-17-bayes-unified-design.md`. The earlier in-flight Bayes alpha specs (`docs/specs/2026-05-04-bayes-module-design.md` and `docs/specs/2026-05-05-bayes-actions-design.md`) are historical only.
 

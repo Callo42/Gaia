@@ -16,14 +16,14 @@ from gaia.engine.lang.runtime.package import CollectedPackage
 
 
 def _build_minimal_bayes_package(name: str) -> CollectedPackage:
-    """Construct a CollectedPackage containing one Bayes prediction action."""
+    """Construct a CollectedPackage containing one Bayes model action."""
     with CollectedPackage(name=name, namespace="t") as pkg:
         theta = Variable(symbol="theta", domain=Probability)
         k = Variable(symbol="k", domain=Nat)
         hypothesis = parameter(theta, 0.75, content="theta = 0.75.", prior=0.5, label="h")
-        bayes.predict(
+        bayes.model(
             hypothesis,
-            target=k,
+            observable=k,
             distribution=Binomial("k under h", n=10, p=theta),
             label="theta_model",
         )
@@ -104,9 +104,9 @@ def test_bayes_actions_compile_through_registered_extension() -> None:
         theta = Variable(symbol="theta", domain=Probability)
         k = Variable(symbol="k", domain=Nat)
         hypothesis = parameter(theta, 0.75, content="theta = 0.75.", prior=0.5, label="h")
-        model_helper = bayes.predict(
+        model_helper = bayes.model(
             hypothesis,
-            target=k,
+            observable=k,
             distribution=Binomial("k under h", n=10, p=theta),
             label="theta_model",
         )
@@ -117,7 +117,7 @@ def test_bayes_actions_compile_through_registered_extension() -> None:
         knowledge for knowledge in compiled.graph.knowledges if knowledge.id == helper_id
     )
 
-    assert helper_ir.metadata["prediction"]["kind"] == "prediction"
+    assert helper_ir.metadata["model"]["kind"] == "model"
     assert compiled.action_label_map["t:extension_bayes_pkg::action::theta_model"] == helper_id
 
 

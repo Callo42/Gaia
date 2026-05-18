@@ -76,6 +76,21 @@ def test_variable_metadata_serializes_canonical_unit() -> None:
     }
 
 
+def test_variable_metadata_serializes_custom_domain_structure() -> None:
+    particle = Domain(content="Particle domain", members=["electron", "muon"])
+    particle.label = "Particle"
+    variable = Variable(symbol="x", domain=particle)
+
+    assert _metadata_to_ir(variable, {}) == {
+        "kind": "variable",
+        "symbol": "x",
+        "domain": "Particle",
+        "domain_content": "Particle domain",
+        "domain_members": ["electron", "muon"],
+        "unit": None,
+    }
+
+
 def test_variable_symbol_required():
     with pytest.raises(TypeError, match="symbol"):
         Variable(domain=Nat)  # type: ignore[call-arg]

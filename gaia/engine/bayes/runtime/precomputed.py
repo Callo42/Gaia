@@ -56,8 +56,8 @@ class PrecomputedLikelihoods(Claim):
     ----------
     log_likelihoods:
         Mapping from hypothesis :class:`Claim` (the original objects passed
-        to :func:`predict`) to ``log P(data | H_i)``. Same key shape as the
-        legacy ``compare(precomputed=...)`` dict.
+        to :func:`gaia.engine.bayes.model`) to ``log P(data | H_i)``. Same
+        key shape as the legacy ``compare(precomputed=...)`` dict.
     diagnostics:
         Solver-specific convergence and provenance fields. Opaque to Gaia;
         consumed by ``gaia audit`` rules and reviewers. Recommended keys:

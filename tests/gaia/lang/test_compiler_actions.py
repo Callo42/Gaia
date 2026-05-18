@@ -694,9 +694,9 @@ def test_duplicate_bayes_and_core_action_label_raises():
     with CollectedPackage("v6_actions") as pkg:
         theta = Variable(symbol="theta", domain=ProbabilityDomain)
         hypothesis = parameter(theta, 0.5, content="theta = 0.5.", prior=0.5, label="h")
-        bayes.predict(
+        bayes.model(
             hypothesis,
-            target=theta,
+            observable=theta,
             distribution=Beta("theta prior", alpha=1, beta=1),
             label="same_action",
         )

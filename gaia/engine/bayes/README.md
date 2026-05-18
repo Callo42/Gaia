@@ -2,7 +2,7 @@
 
 `gaia.engine.bayes` provides the unified Bayes authoring surface:
 
-- `predict(hypothesis, target=..., distribution=...)` — declare a
+- `model(hypothesis, observable=..., distribution=...)` — declare a
   predictive distribution for one hypothesis.
 - `compare(data, models=[...], exclusivity=...)` — compare
   equal-positioned predictive models against observation data. The
@@ -33,10 +33,10 @@ import gaia.engine.bayes as bayes
 from gaia.engine.lang import Binomial, BetaBinomial, observe
 
 data = observe(k, value=295)
-mendel_pred = bayes.predict(h_a, target=k,
-                            distribution=Binomial("k under A", n=395, p=0.75))
-diffuse_pred = bayes.predict(h_b, target=k,
-                             distribution=BetaBinomial("k under B", n=395, alpha=1, beta=1))
+mendel_pred = bayes.model(h_a, observable=k,
+                          distribution=Binomial("k under A", n=395, p=0.75))
+diffuse_pred = bayes.model(h_b, observable=k,
+                           distribution=BetaBinomial("k under B", n=395, alpha=1, beta=1))
 comparison = bayes.compare(data, models=[mendel_pred, diffuse_pred])
 ```
 

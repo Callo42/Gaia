@@ -364,9 +364,9 @@ def _observe_continuous(
     unit, kind}``. Scalar ``error`` is sugared into an anonymous
     :class:`Distribution` (``Normal(mu=0, sigma=error)``) so noise is
     always either ``None`` or a Distribution Knowledge object — the same
-    contract the Bayes ``compare()`` lowering relies on. This makes the
-    ``predict(target=Distribution)`` path symmetric with the
-    ``predict(target=Variable)`` path.
+    contract the Bayes ``compare()`` lowering relies on for observed data.
+    Distribution observations remain the quantity-with-predicate path;
+    Bayes ``model(...)`` observables are Variables only.
     """
     coerced_value, value_unit = _coerce_observation_scalar(value, target=target, role="value")
 

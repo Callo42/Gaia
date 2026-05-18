@@ -11,7 +11,7 @@ Two theories compete for the same single-factor cross:
   denies that discrete dominant/recessive classes exist in F2 at all.
 
 The quantitative count comparison uses the v0.6 unified Bayes surface
-(``predict / observe / compare``) rather than the v0.5 trio
+(``model / observe / compare``) rather than the v0.5 trio
 (``bayes.model / bayes.data / bayes.likelihood``):
 
 * Mendel is represented by ``Binomial(name, n=395, p=3/4)``.
@@ -192,15 +192,15 @@ mendel_predicts_three_to_one_ratio = derive(
 # Quantitative count comparison via gaia.engine.bayes (v0.6 unified surface)
 # -----------------------------------------------------------------------------
 #
-# predict(...) declares the predictive distribution as a named Distribution
+# model(...) declares the predictive distribution as a named Distribution
 # Knowledge object (reviewable in its own right). compare(data, models=[...])
 # evaluates the log-likelihood of f2_count_observation under each predictive
 # distribution and emits one infer factor per hypothesis. The observation
 # itself is a Variable-targeted observe(...) — no formula plumbing.
 
-mendel_count_model = bayes.predict(
+mendel_count_model = bayes.model(
     mendelian_segregation_model,
-    target=f2_dominant_count,
+    observable=f2_dominant_count,
     distribution=Binomial(
         "F2 dominant count under Mendel 3:1",
         n=TOTAL_COUNT,
@@ -214,9 +214,9 @@ mendel_count_model = bayes.predict(
     label="mendel_count_model",
 )
 
-diffuse_count_model = bayes.predict(
+diffuse_count_model = bayes.model(
     blending_inheritance_model,
-    target=f2_dominant_count,
+    observable=f2_dominant_count,
     distribution=BetaBinomial(
         "F2 dominant count under p ~ Uniform[0, 1]",
         n=TOTAL_COUNT,

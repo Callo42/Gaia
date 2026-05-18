@@ -61,15 +61,15 @@ def _build_mendel(*, exclusivity: str):
         h_31 = parameter(theta, 0.75, content="theta = 0.75.", prior=0.5, label="h_3_1")
         h_null = parameter(theta, 0.5, content="theta = 0.5.", prior=0.5, label="h_null")
         data = observe(k, value=295, label="data", rationale="Observed k = 295.")
-        pred_31 = bayes.predict(
+        pred_31 = bayes.model(
             h_31,
-            target=k,
+            observable=k,
             distribution=LangBinomial("k under 3:1", n=n, p=theta),
             label="model_3_1",
         )
-        pred_null = bayes.predict(
+        pred_null = bayes.model(
             h_null,
-            target=k,
+            observable=k,
             distribution=LangBinomial("k under null", n=n, p=theta),
             label="model_null",
         )
@@ -134,15 +134,15 @@ def test_mendel_betabinomial_diffuse_matches_scipy_betabinom():
         mendel = claim("mendelian segregation", prior=0.5, label="mendel")
         diffuse = claim("diffuse alternative", prior=0.5, label="diffuse")
         data = observe(k_var, value=k_observed, label="data")
-        mendel_pred = bayes.predict(
+        mendel_pred = bayes.model(
             mendel,
-            target=k_var,
+            observable=k_var,
             distribution=LangBinomial("k under Mendel", n=n, p=3 / 4),
             label="mendel_pred",
         )
-        diffuse_pred = bayes.predict(
+        diffuse_pred = bayes.model(
             diffuse,
-            target=k_var,
+            observable=k_var,
             distribution=LangBetaBinomial("k under diffuse", n=n, alpha=1.0, beta=1.0),
             label="diffuse_pred",
         )
@@ -201,15 +201,15 @@ def test_precomputed_dict_matches_internal_evaluation():
         h_31 = parameter(theta, 0.75, content="theta = 0.75.", prior=0.5, label="h_3_1")
         h_null = parameter(theta, 0.5, content="theta = 0.5.", prior=0.5, label="h_null")
         data = observe(k_var, value=k, label="data")
-        pred_31 = bayes.predict(
+        pred_31 = bayes.model(
             h_31,
-            target=k_var,
+            observable=k_var,
             distribution=LangBinomial("k under 3:1", n=n, p=theta),
             label="model_3_1",
         )
-        pred_null = bayes.predict(
+        pred_null = bayes.model(
             h_null,
-            target=k_var,
+            observable=k_var,
             distribution=LangBinomial("k under null", n=n, p=theta),
             label="model_null",
         )
@@ -249,15 +249,15 @@ def test_precomputed_claim_matches_internal_evaluation():
         h_31 = parameter(theta, 0.75, content="theta = 0.75.", prior=0.5, label="h_3_1")
         h_null = parameter(theta, 0.5, content="theta = 0.5.", prior=0.5, label="h_null")
         data = observe(k_var, value=k, label="data")
-        pred_31 = bayes.predict(
+        pred_31 = bayes.model(
             h_31,
-            target=k_var,
+            observable=k_var,
             distribution=LangBinomial("k under 3:1", n=n, p=theta),
             label="model_3_1",
         )
-        pred_null = bayes.predict(
+        pred_null = bayes.model(
             h_null,
-            target=k_var,
+            observable=k_var,
             distribution=LangBinomial("k under null", n=n, p=theta),
             label="model_null",
         )
@@ -307,15 +307,15 @@ def test_precomputed_via_compute_decorator():
         h_31 = parameter(theta, 0.75, content="theta = 0.75.", prior=0.5, label="h_3_1")
         h_null = parameter(theta, 0.5, content="theta = 0.5.", prior=0.5, label="h_null")
         data = observe(k_var, value=k, label="data")
-        pred_31 = bayes.predict(
+        pred_31 = bayes.model(
             h_31,
-            target=k_var,
+            observable=k_var,
             distribution=LangBinomial("k under 3:1", n=n, p=theta),
             label="model_3_1",
         )
-        pred_null = bayes.predict(
+        pred_null = bayes.model(
             h_null,
-            target=k_var,
+            observable=k_var,
             distribution=LangBinomial("k under null", n=n, p=theta),
             label="model_null",
         )
