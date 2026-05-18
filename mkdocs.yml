@@ -57,6 +57,8 @@ nav:
   - User Reference:
       - Language Reference: for-users/language-reference.md
       - CLI Commands: for-users/cli-commands.md
+  - Release Notes:
+      - v0.5.0a1 Alpha: releases/0.5.0a1.md
   - Foundational Docs:
       - Overview: foundations/README.md
       - Theory:
