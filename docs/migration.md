@@ -55,7 +55,7 @@ and `pkg add-module` are current v0.5 additions, not old flat-verb mappings.
 | `inquiry` | `focus` / `review` / `obligation [add\|list\|close]` / `hypothesis [add\|list\|remove]` / `tactics log` / `reject` | Local semantic inquiry loop *(unchanged)* |
 | `pkg` | `add` / `add-import` / `add-module` / `register` / `scaffold` | Install dependencies, manage package modules/imports, publish, and bootstrap packages |
 | `author` | `claim` / `note` / `question` / `derive` / `observe` / `compute` / `infer` / relation and scaffold verbs / `compose` | Agent-first DSL authoring helpers |
-| `bayes` | `model` / `likelihood` / distribution literals | Bayesian model and distribution authoring helpers |
+| `bayes` | `model` / `compare` / distribution literals | Bayesian model and distribution authoring helpers |
 | `trace` | `verify` / `review` / `show` | ARM Trace tooling *(unchanged, independent)* |
 
 > **Note on `review` vs. `inquiry review` / `trace review`**: the new

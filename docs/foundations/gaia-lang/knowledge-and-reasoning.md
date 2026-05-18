@@ -305,7 +305,8 @@ Schema reference: `docs/specs/2026-05-04-claim-formula-schema-design.md`.
 
 ## 6. Bayes Module
 
-`gaia.engine.bayes` provides the lifted authoring surface for model-data likelihood updates:
+`gaia.engine.bayes` provides the lifted authoring surface for model-data
+comparisons:
 
 - **Distribution Knowledge factories.** `Normal("T_c", mu=..., sigma=...)`, `Binomial("k", n=..., p=...)`, etc., imported from `gaia.engine.lang`. They are `Distribution(Knowledge)` nodes with identity, label, and provenance; the scipy-backed pydantic backend at `gaia.engine.bayes.distributions` is internal.
 - **`bayes.model(hypothesis, observable=..., distribution=...)`.** Returns a predictive-model helper Claim backed by a `Model(BayesInference)` record that ties one hypothesis Claim to one predictive distribution over a Variable observable.

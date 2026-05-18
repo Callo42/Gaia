@@ -213,8 +213,8 @@ Start with [`docs/README.md`](docs/README.md). Common entry points:
 
 - [`docs/for-visitors/what-is-gaia.md`](docs/for-visitors/what-is-gaia.md) - conceptual overview.
 - [`docs/for-users/quick-start.md`](docs/for-users/quick-start.md) - first package walkthrough.
-- [`docs/for-users/language-reference.md`](docs/for-users/language-reference.md) - practical v0.5 DSL guide.
-- [`docs/for-users/cli-commands.md`](docs/for-users/cli-commands.md) - workflow-oriented CLI guide.
+- [`docs/for-users/language-reference.md`](docs/for-users/language-reference.md) - practical v0.5 DSL cheat sheet and language reference.
+- [`docs/for-users/cli-commands.md`](docs/for-users/cli-commands.md) - workflow-oriented CLI guide and command map.
 - [`docs/reference/cli/index.md`](docs/reference/cli/index.md) - generated CLI reference.
 - [`docs/reference/engine/lang/dsl.md`](docs/reference/engine/lang/dsl.md) - generated DSL API reference.
 - [`docs/reference/engine/bayes.md`](docs/reference/engine/bayes.md) - generated Bayes API reference.

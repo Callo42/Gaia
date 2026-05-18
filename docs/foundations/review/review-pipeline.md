@@ -27,7 +27,7 @@ Every authored Action that survives lowering produces at least one **review targ
 | `Infer` / `Associate` | `strategy` | "Are the supplied conditional probabilities for &lt;action_label&gt; defensible?" |
 | `Equal / Contradict / Exclusive` (`Relation`) and `Decompose` | `operator` | "Is the declared relation or decomposition from &lt;action_label&gt; correct?" |
 | `Compose` | `compose` | "Is the composed workflow &lt;action_label&gt; well-formed and faithful to its child actions?" |
-| Reviewable helper claims (e.g. `bayes` likelihood comparison) | `knowledge` | "Does the helper claim &lt;label&gt; correctly summarize the underlying lifted likelihood update?" |
+| Reviewable helper claims (e.g. `bayes.compare` model comparison) | `knowledge` | "Does the helper claim &lt;label&gt; correctly summarize the underlying lifted model-data comparison?" |
 
 `DependsOn` and `CandidateRelation` (`Scaffold`) are intentionally not reviewable — they are authoring metadata only and never enter the IR. Structural-expression helper claims from the deprecated compatibility functions `not_(...)`, `and_(...)`, and `or_(...)` carry `metadata["review"] = false` and are also skipped. Modern `~A` / `A & B` / `A | B` shortcuts return Formula nodes, not review targets by themselves; once wrapped in `claim(..., formula=...)`, the authored claim and lowered formula operators follow the normal formula-claim path.
 
