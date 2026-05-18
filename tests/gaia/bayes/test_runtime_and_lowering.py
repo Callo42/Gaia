@@ -215,7 +215,7 @@ def test_compare_compiles_to_reviewable_infer_strategies_and_exhaustive_compleme
 
 
 def test_compare_precomputed_uses_hypothesis_claim_keys_not_model_helpers():
-    pkg, h_31, h_null, data, model_31, model_null, _cmp_result = _compiled_mendel_bayes()
+    pkg, _h_31, h_null, data, model_31, model_null, _cmp_result = _compiled_mendel_bayes()
     token = _current_package.set(pkg)
     try:
         with pytest.raises(ValueError, match="precomputed likelihood keys"):
@@ -476,7 +476,10 @@ def test_exhaustive_equal_prior_argmax_tracks_largest_log_likelihood():
             h_mid, target=k, distribution=Binomial("k under mid", n=5, p=theta), label="model_mid"
         )
         model_high = bayes.predict(
-            h_high, target=k, distribution=Binomial("k under high", n=5, p=theta), label="model_high"
+            h_high,
+            target=k,
+            distribution=Binomial("k under high", n=5, p=theta),
+            label="model_high",
         )
         comparison = bayes.compare(
             data,

@@ -48,8 +48,8 @@ from typing import Any
 # --------------------------------------------------------------------------
 
 try:
-    import pymc as pm  # noqa: F401
     import arviz  # noqa: F401
+    import pymc as pm
 except ImportError as err:  # pragma: no cover — only hit when PyMC missing
     sys.stderr.write(
         "This demo requires PyMC and arviz, which are NOT part of the Gaia "
@@ -62,11 +62,9 @@ except ImportError as err:  # pragma: no cover — only hit when PyMC missing
 import pymc as pm
 import scipy.stats as stats
 
-
 # --------------------------------------------------------------------------
 # Gaia v0.6 surface — the actual contract this demo is exercising.
 # --------------------------------------------------------------------------
-
 import gaia.engine.bayes as bayes
 from gaia.engine.bayes.runtime.precomputed import PrecomputedLikelihoods
 from gaia.engine.bp.exact import exact_inference
@@ -88,7 +86,6 @@ from gaia.engine.lang.compiler.compile import compile_package_artifact
 from gaia.engine.lang.runtime.knowledge import _current_package
 from gaia.engine.lang.runtime.package import CollectedPackage
 
-
 # --------------------------------------------------------------------------
 # PyMC marginal-likelihood computation — the "external solver" body.
 # --------------------------------------------------------------------------
@@ -100,7 +97,9 @@ SMC_CHAINS = 4
 SMC_SEED = 42
 
 
-def _pymc_smc_log_marginal_diffuse(*, draws: int, chains: int, seed: int) -> tuple[float, float, list[float]]:
+def _pymc_smc_log_marginal_diffuse(
+    *, draws: int, chains: int, seed: int
+) -> tuple[float, float, list[float]]:
     """Run PyMC SMC on the diffuse model and return (mean, std, per_chain) log marginal.
 
     PyMC SMC stores ``log_marginal_likelihood`` per (chain, beta_step) with
@@ -140,7 +139,7 @@ def build_pymc_compute_wrapper() -> Any:
 
     @compute
     def pymc_log_marginals(
-        data: object,
+        data: object,  # noqa: ARG001 — recorded as Compute action dependency
         mendel_hypothesis: object,
         diffuse_hypothesis: object,
     ) -> PrecomputedLikelihoods:
@@ -253,6 +252,7 @@ def run_demo() -> dict[str, Any]:
 
 
 def print_report(result: dict[str, Any]) -> None:
+    """Print the demo's Mendel-vs-Diffuse comparison against the closed-form answer."""
     pre = result["precomputed"]
     beliefs = result["beliefs"]
 
@@ -277,14 +277,30 @@ def print_report(result: dict[str, Any]) -> None:
         """))
 
     print("Log marginal likelihoods:")
-    print(f"  Mendel  (PyMC/closed-form):    {pymc_mendel:12.6f}    (closed-form: {closed_mendel:12.6f}, diff {pymc_mendel - closed_mendel:+.2e})")
-    print(f"  Diffuse (PyMC SMC):            {pymc_diffuse:12.6f}    (closed-form: {closed_diffuse:12.6f}, diff {pymc_diffuse - closed_diffuse:+.2e})")
+    print(
+        f"  Mendel  (PyMC/closed-form):    {pymc_mendel:12.6f}    "
+        f"(closed-form: {closed_mendel:12.6f}, diff {pymc_mendel - closed_mendel:+.2e})"
+    )
+    print(
+        f"  Diffuse (PyMC SMC):            {pymc_diffuse:12.6f}    "
+        f"(closed-form: {closed_diffuse:12.6f}, diff {pymc_diffuse - closed_diffuse:+.2e})"
+    )
     print()
-    print(f"PyMC SMC per-chain log marginals (diffuse): {pre.diagnostics['diffuse_log_marginal_per_chain']}")
-    print(f"PyMC SMC std dev across chains   (diffuse): {pre.diagnostics['diffuse_log_marginal_std']:.4f}")
+    per_chain = pre.diagnostics["diffuse_log_marginal_per_chain"]
+    print(f"PyMC SMC per-chain log marginals (diffuse): {per_chain}")
+    print(
+        f"PyMC SMC std dev across chains   (diffuse): "
+        f"{pre.diagnostics['diffuse_log_marginal_std']:.4f}"
+    )
     print()
-    print(f"Bayes factor (PyMC):       exp({pymc_mendel - pymc_diffuse:.4f}) ≈ {math.exp(pymc_mendel - pymc_diffuse):.2e}")
-    print(f"Bayes factor (closed):     exp({closed_mendel - closed_diffuse:.4f}) ≈ {math.exp(closed_mendel - closed_diffuse):.2e}")
+    print(
+        f"Bayes factor (PyMC):       exp({pymc_mendel - pymc_diffuse:.4f}) "
+        f"≈ {math.exp(pymc_mendel - pymc_diffuse):.2e}"
+    )
+    print(
+        f"Bayes factor (closed):     exp({closed_mendel - closed_diffuse:.4f}) "
+        f"≈ {math.exp(closed_mendel - closed_diffuse):.2e}"
+    )
     print()
     print("Gaia BP posteriors (priors 0.5 each, exhaustive pairwise complement):")
     print(f"  P(Mendel  | data)    = {beliefs['mendel']:.6f}")

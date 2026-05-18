@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Union
+from typing import Any
 
 from gaia.engine.lang.runtime.action import Reasoning
 from gaia.engine.lang.runtime.distribution import Distribution
@@ -27,7 +27,7 @@ class Prediction(BayesInference):
     """
 
     hypothesis: Claim | None = None
-    target: Union[Variable, Distribution, None] = None
+    target: Variable | Distribution | None = None
     distribution: Distribution | None = None
     helper: Claim | None = None
 

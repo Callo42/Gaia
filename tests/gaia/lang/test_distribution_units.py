@@ -214,7 +214,11 @@ def test_gamma_rate_unit_uses_random_variable_unit_for_observations():
     obs = observe(lifetime, value=q(2, "s"), error=q(0.1, "s"))
     payload = obs.metadata["observation"]
     assert payload["value"] == 2.0
-    assert payload["error"] == 0.1
+    # Scalar ``error=q(0.1, "s")`` is sugared into an anonymous
+    # Normal(mu=0 s, sigma=0.1 s) noise Distribution under the unified
+    # observe() schema.
+    noise = payload["noise"]
+    assert noise.kind == "normal"
     assert payload["unit"] == "second"
 
 
@@ -228,7 +232,8 @@ def test_observe_with_quantity_value_and_error():
     obs = observe(T_c, value=q(203, "K"), error=q(5, "K"))
     payload = obs.metadata["observation"]
     assert payload["value"] == 203.0
-    assert payload["error"] == 5.0
+    noise = payload["noise"]
+    assert noise.kind == "normal"
     assert payload["unit"] == "kelvin"
     assert "kelvin" in obs.content
 
@@ -272,5 +277,7 @@ def test_observe_unitless_path_unchanged():
     obs = observe(T_c, value=203, error=5)
     payload = obs.metadata["observation"]
     assert payload["value"] == 203.0
-    assert payload["error"] == 5.0
+    noise = payload["noise"]
+    assert noise.kind == "normal"
+    assert noise.params["sigma"] == 5.0
     assert payload["unit"] is None

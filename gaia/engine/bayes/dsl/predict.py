@@ -1,6 +1,6 @@
-"""v0.6 Bayes ``predict`` verb — author predictive distributions.
+"""Bayes ``predict`` verb — author predictive distributions.
 
-`predict(hypothesis, target=variable_or_distribution, distribution=dist)`
+``predict(hypothesis, target=variable_or_distribution, distribution=dist)``
 declares: "under ``hypothesis``, ``target`` follows the predictive
 distribution ``dist``". Returns the helper Claim that other verbs cite.
 
@@ -9,23 +9,19 @@ The helper Claim writes the canonical ``metadata["prediction"]`` schema:
 ``{"hypothesis": Claim, "target": Variable | Distribution,
 "distribution": Distribution, "kind": "prediction"}``
 
-This is the v0.6 replacement for ``bayes.model(hypothesis, observable=...,
-distribution=...)``. The differences from the v0.5 verb:
+Key design points:
 
-* ``target`` replaces ``observable``; type widened to
-  ``Variable | Distribution`` so the same kwarg covers both observable
-  Variables and observe-style Distribution random variables.
+* ``target`` accepts ``Variable | Distribution`` so one kwarg covers both
+  observable Variables (Bayes-style discrete counts) and Distribution
+  random variables (quantity-with-predicate observations).
 * ``distribution`` must be a :class:`Distribution` Knowledge object (from
   the ``gaia.engine.lang`` factories), not a raw typed-value pydantic
-  instance.
-
-The legacy verb stays available; v0.6 lowering dispatches on
-:class:`Prediction` (this verb's Action), not :class:`PredictiveModel`.
+  instance — the latter is the internal scipy backend.
 """
 
 from __future__ import annotations
 
-from typing import Any, Union
+from typing import Any
 
 from gaia.engine.bayes.runtime import Prediction
 from gaia.engine.lang.runtime import Claim, Distribution, Knowledge, Variable
@@ -38,7 +34,7 @@ def _claim_ref(claim: Claim) -> str:
     return claim.content
 
 
-def _target_descriptor(target: Union[Variable, Distribution]) -> str:
+def _target_descriptor(target: Variable | Distribution) -> str:
     if isinstance(target, Variable):
         return target.symbol
     return target.label or target.content[:40]
@@ -47,7 +43,7 @@ def _target_descriptor(target: Union[Variable, Distribution]) -> str:
 def predict(
     hypothesis: Claim,
     *,
-    target: Union[Variable, Distribution],
+    target: Variable | Distribution,
     distribution: Distribution,
     background: list[Knowledge] | None = None,
     rationale: str = "",

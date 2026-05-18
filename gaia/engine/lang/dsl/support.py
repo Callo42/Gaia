@@ -1,4 +1,12 @@
-"""Gaia Lang v6 Support verbs: derive, observe, compute."""
+"""Gaia Lang v6 Support verbs: derive, observe, compute.
+
+Docstrings throughout this module use the Greek sigma (``σ``) for noise
+standard-deviation arguments — a domain convention for measurement
+error. The file-level ``# ruff: noqa: RUF002`` keeps ruff from flagging
+the ambiguous-symbol rule for those scientific docstrings.
+"""
+
+# ruff: noqa: RUF002
 
 from __future__ import annotations
 
@@ -137,7 +145,7 @@ def observe(
        :func:`gaia.engine.bayes.compare`. Scalar ``error`` is sugared into
        an anonymous ``Normal(mu=0, sigma=error)`` so noise is always either
        ``None`` or a :class:`Distribution` Knowledge node.
-    """  # noqa: RUF002 (sigma symbol used in scientific docstring)
+    """
     if isinstance(conclusion, Distribution):
         if value is _OBSERVE_VALUE_SENTINEL:
             raise TypeError(
@@ -309,22 +317,32 @@ def _observe_continuous(
     rationale: str,
     label: str | None,
 ) -> Claim:
-    """Build the observation Claim for a continuous quantity measurement."""
+    """Build the observation Claim for a continuous Distribution measurement.
+
+    Writes the **unified** ``metadata["observation"]`` schema (same shape
+    that :func:`_observe_variable` produces): ``{target, value, noise,
+    unit, kind}``. Scalar ``error`` is sugared into an anonymous
+    :class:`Distribution` (``Normal(mu=0, sigma=error)``) so noise is
+    always either ``None`` or a Distribution Knowledge object — the same
+    contract the Bayes ``compare()`` lowering relies on. This makes the
+    ``predict(target=Distribution)`` path symmetric with the
+    ``predict(target=Variable)`` path.
+    """
     coerced_value, value_unit = _coerce_observation_scalar(value, target=target, role="value")
 
-    coerced_error: Any
+    noise: Distribution | None
     if error is None:
-        coerced_error = None
+        noise = None
     elif isinstance(error, Distribution):
         _validate_noise_distribution_unit(error, target=target)
-        coerced_error = error
+        noise = error
     else:
         coerced_error_scalar, _ = _coerce_observation_scalar(error, target=target, role="error")
         if coerced_error_scalar <= 0.0:
             raise ValueError(
                 f"observe(distribution, error=sigma) requires sigma > 0, got {error!r}."
             )
-        coerced_error = coerced_error_scalar
+        noise = _anonymous_normal_noise(coerced_error_scalar, value_unit=value_unit)
 
     label_part = target.label or target.content[:40]
     unit_suffix = f" {value_unit}" if value_unit else ""
@@ -333,25 +351,30 @@ def _observe_continuous(
     # magnitudes; Python's :g default flips to scientific only at very small
     # or very large magnitudes).
     value_part = format(coerced_value, "g")
-    if isinstance(error, Distribution):
-        error_part = f" with noise {error.kind}"
-    elif error is None:
+    if noise is None:
         error_part = ""
+    elif noise.kind == "normal":
+        sigma = noise.params.get("sigma")
+        if isinstance(sigma, (int, float)):
+            error_part = f" +/- {format(float(sigma), 'g')}{unit_suffix}"
+        else:
+            error_part = f" with noise {noise.kind}"
     else:
-        error_part = f" +/- {format(coerced_error, 'g')}{unit_suffix}"
+        error_part = f" with noise {noise.kind}"
     content = f"Observed {label_part} = {value_part}{unit_suffix}{error_part}"
 
     obs_metadata: dict[str, Any] = {
         "observation": {
-            "target_distribution": target,
+            "target": target,
             "value": coerced_value,
-            "error": coerced_error,
+            "noise": noise,
             "unit": value_unit,
-            "kind": "continuous_observation",
+            "kind": "observation",
         },
     }
     if source_refs:
         obs_metadata["source_refs"] = list(source_refs)
+        obs_metadata["observation"]["source_refs"] = list(source_refs)
     obs_claim = Claim(content, metadata=obs_metadata)
     warrant = _implication_warrant(
         "observe",
@@ -372,6 +395,31 @@ def _observe_continuous(
     validate_no_self_warrant(action, obs_claim)
     attach_reasoning(obs_claim, action)
     return obs_claim
+
+
+def _anonymous_normal_noise(sigma: float, *, value_unit: str | None) -> Distribution:
+    """Return an anonymous ``Normal(mu=0, sigma=sigma)`` Distribution Knowledge.
+
+    Used by both :func:`_observe_continuous` and :func:`_observe_variable`
+    to sugar scalar ``error=σ`` into the unified Distribution-shaped
+    ``noise`` payload. Carrying a unit through to the Normal's
+    parameters keeps quantity-with-predicate observations dimensionally
+    consistent.
+    """
+    from gaia.engine.lang.runtime.distribution import Normal as _NormalFactory
+    from gaia.unit import q
+
+    if value_unit is None:
+        return _NormalFactory(
+            f"measurement noise Normal(mu=0, sigma={sigma:g})",
+            mu=0.0,
+            sigma=sigma,
+        )
+    return _NormalFactory(
+        f"measurement noise Normal(mu=0 {value_unit}, sigma={sigma:g} {value_unit})",
+        mu=q(0.0, value_unit),
+        sigma=q(sigma, value_unit),
+    )
 
 
 def _coerce_variable_scalar(raw: Any, *, role: str) -> tuple[int | float, str | None]:
@@ -403,24 +451,16 @@ def _coerce_variable_scalar(raw: Any, *, role: str) -> tuple[int | float, str | 
 def _coerce_variable_error(error: Any, *, value_unit: str | None) -> Distribution | None:
     """Sugar scalar error= into anonymous Normal(0, σ); pass Distribution through.
 
-    Returns ``None`` for noise-free observations. Scalar ``error=σ`` (with
-    σ > 0) becomes an anonymous :class:`Distribution` produced by the
-    :func:`Normal` factory with ``mu=0, sigma=σ``. A unit-aware
-    :class:`gaia.unit.Quantity` error in the target's unit is honoured for
-    parity with the Distribution path. A pre-built :class:`Distribution`
-    is accepted as-is.
-
-    The constructed Normal carries an auto-derived content string and no
-    label; it lives as an anonymous Knowledge node in the package so
-    metadata serialisation has something to identify it during IR
-    emission.
+    Returns ``None`` for noise-free observations. Scalar ``error=σ``
+    (with σ > 0) becomes an anonymous :class:`Distribution` produced by
+    :func:`_anonymous_normal_noise` (shared with the Distribution-target
+    path). A pre-built :class:`Distribution` is accepted as-is.
     """
     if error is None:
         return None
     if isinstance(error, Distribution):
         return error
-    from gaia.engine.lang.runtime.distribution import Normal as _NormalFactory
-    from gaia.unit import is_quantity, q
+    from gaia.unit import is_quantity
 
     if is_quantity(error):
         magnitude = float(error.magnitude)
@@ -428,17 +468,7 @@ def _coerce_variable_error(error: Any, *, value_unit: str | None) -> Distributio
             raise ValueError(
                 f"observe(variable, error=sigma) requires sigma > 0, got {error!r}."
             )
-        if value_unit is None:
-            return _NormalFactory(
-                f"measurement noise Normal(mu=0, sigma={magnitude:g})",
-                mu=0.0,
-                sigma=magnitude,
-            )
-        return _NormalFactory(
-            f"measurement noise Normal(mu=0 {value_unit}, sigma={magnitude:g} {value_unit})",
-            mu=q(0.0, value_unit),
-            sigma=q(magnitude, value_unit),
-        )
+        return _anonymous_normal_noise(magnitude, value_unit=value_unit)
     if isinstance(error, bool) or not isinstance(error, (int, float)):
         raise TypeError(
             "observe(variable, error=...) must be None, a positive numeric scalar, "
@@ -450,17 +480,7 @@ def _coerce_variable_error(error: Any, *, value_unit: str | None) -> Distributio
         raise ValueError(
             f"observe(variable, error=sigma) requires sigma > 0, got {error!r}."
         )
-    if value_unit is None:
-        return _NormalFactory(
-            f"measurement noise Normal(mu=0, sigma={sigma:g})",
-            mu=0.0,
-            sigma=sigma,
-        )
-    return _NormalFactory(
-        f"measurement noise Normal(mu=0 {value_unit}, sigma={sigma:g} {value_unit})",
-        mu=q(0.0, value_unit),
-        sigma=q(sigma, value_unit),
-    )
+    return _anonymous_normal_noise(sigma, value_unit=value_unit)
 
 
 def _observe_variable(

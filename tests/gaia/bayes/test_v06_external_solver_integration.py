@@ -52,11 +52,11 @@ from gaia.engine.lang import (
     claim,
     compute,
     observe,
+    parameter,
 )
 from gaia.engine.lang.compiler.compile import compile_package_artifact
 from gaia.engine.lang.runtime.knowledge import _current_package
 from gaia.engine.lang.runtime.package import CollectedPackage
-
 
 N_TRIALS = 395
 K_OBSERVED = 295
@@ -64,7 +64,7 @@ K_OBSERVED = 295
 
 @compute
 def scipy_quad_log_marginals(
-    data: object,
+    data: object,  # noqa: ARG001 — recorded as Compute action dependency
     mendel_hypothesis: object,
     diffuse_hypothesis: object,
 ) -> PrecomputedLikelihoods:
@@ -196,7 +196,7 @@ def test_scipy_quad_solver_matches_closed_form_betabinomial():
     so ``log P(k) = -log(n+1)`` regardless of which k was observed.
     Confirm quad gives the same number scipy.stats.betabinom does.
     """
-    pkg, mendel, diffuse, cmp_result, precomputed_claim = _build_v06_with_external_solver(
+    _pkg, _mendel, diffuse, _cmp_result, precomputed_claim = _build_v06_with_external_solver(
         use_precomputed=True,
     )
     assert precomputed_claim is not None
@@ -227,7 +227,7 @@ def test_external_solver_bp_posteriors_match_internal_evaluation():
     )
     beliefs_internal = _beliefs_for(pkg_internal, mendel_i, diffuse_i, cmp_internal)
 
-    pkg_quad, mendel_q, diffuse_q, cmp_quad, precomputed_claim = _build_v06_with_external_solver(
+    pkg_quad, mendel_q, diffuse_q, cmp_quad, _precomputed_claim = _build_v06_with_external_solver(
         use_precomputed=True,
     )
     beliefs_quad = _beliefs_for(pkg_quad, mendel_q, diffuse_q, cmp_quad)
@@ -253,7 +253,7 @@ def test_precomputed_claim_carries_solver_diagnostics_through_compile():
     Compute action and inspect the solver's tolerance and error
     estimates without parsing free-form metadata.
     """
-    pkg, _, _, cmp_result, precomputed_claim = _build_v06_with_external_solver(
+    pkg, _mendel, _diffuse, _cmp_result, precomputed_claim = _build_v06_with_external_solver(
         use_precomputed=True,
     )
     assert precomputed_claim is not None
@@ -275,6 +275,123 @@ def test_precomputed_claim_carries_solver_diagnostics_through_compile():
     # rules and gaia explain can render them next to the comparison they fed.
     assert pre_node.metadata.get("solver") == "scipy-integrate-quad"
     assert pre_node.metadata.get("kind") == "precomputed_likelihoods"
+
+
+def test_predict_target_distribution_flows_through_compare():
+    """``predict(target=Distribution)`` is symmetric with ``predict(target=Variable)``.
+
+    Regression for the PR review finding that the Distribution-target
+    path failed lowering because ``observe(Distribution, ...)`` wrote
+    the old ``{target_distribution, error, kind: 'continuous_observation'}``
+    schema while the comparison lowering only reads the unified
+    ``{target, noise, kind: 'observation'}`` shape. Both observation
+    paths now write the same schema.
+    """
+    import gaia.engine.bayes as bayes
+    from gaia.engine.lang import Normal as LangNormal
+    from gaia.engine.lang import Real
+
+    pkg = CollectedPackage(name="dist_target_smoke", namespace="t")
+    token = _current_package.set(pkg)
+    try:
+        mu = Variable(symbol="mu", domain=Real)
+        y = LangNormal("measured y", mu=0.0, sigma=1.0, label="y")
+        h_near = parameter(mu, 0.0, content="mu = 0.", prior=0.5, label="h_near")
+        h_far = parameter(mu, 2.0, content="mu = 2.", prior=0.5, label="h_far")
+        data = observe(y, value=0.2, error=0.1, label="data")
+        # Distribution-target observation must write the unified schema.
+        observation = data.metadata["observation"]
+        assert observation["target"] is y
+        assert observation["kind"] == "observation"
+        assert observation["noise"].kind == "normal"
+        model_near = bayes.predict(
+            h_near,
+            target=y,
+            distribution=LangNormal("y under near", mu=mu, sigma=1.0),
+            label="model_near",
+        )
+        model_far = bayes.predict(
+            h_far,
+            target=y,
+            distribution=LangNormal("y under far", mu=mu, sigma=1.0),
+            label="model_far",
+        )
+        cmp_result = bayes.compare(
+            data, models=[model_near, model_far], label="cmp"
+        )
+    finally:
+        _current_package.reset(token)
+
+    compiled = compile_package_artifact(pkg)
+    cmp_id = compiled.knowledge_ids_by_object[id(cmp_result)]
+    likelihoods = next(
+        k for k in compiled.graph.knowledges if k.id == cmp_id
+    ).metadata["comparison"]["likelihoods"]
+    h_near_id = compiled.knowledge_ids_by_object[id(h_near)]
+    h_far_id = compiled.knowledge_ids_by_object[id(h_far)]
+    # Direction: y=0.2 is much closer to mu=0 than mu=2, so the near
+    # hypothesis must have higher log-likelihood than the far one.
+    assert likelihoods[h_near_id] > likelihoods[h_far_id]
+
+
+def test_compare_rejects_nan_precomputed_log_likelihood():
+    """NaN in precomputed dict must error out before lowering.
+
+    Regression for the PR review finding that NaN log-likelihoods were
+    silently Cromwell-clamped to near-max evidence (``[0.5, 0.999]``).
+    """
+    import math as _math
+
+    import gaia.engine.bayes as bayes
+    from gaia.engine.lang import Binomial as LangBinomial2
+
+    pkg = CollectedPackage(name="nan_precomputed_smoke", namespace="t")
+    token = _current_package.set(pkg)
+    try:
+        theta = Variable(symbol="theta", domain=Probability)
+        k_var = Variable(symbol="k", domain=Nat, value=3)
+        h_a = parameter(theta, 0.5, label="h_a", prior=0.5)
+        h_b = parameter(theta, 0.7, label="h_b", prior=0.5)
+        data = observe(k_var, value=3, label="data")
+        pred_a = bayes.predict(
+            h_a,
+            target=k_var,
+            distribution=LangBinomial2("k under a", n=5, p=theta),
+            label="pred_a",
+        )
+        pred_b = bayes.predict(
+            h_b,
+            target=k_var,
+            distribution=LangBinomial2("k under b", n=5, p=theta),
+            label="pred_b",
+        )
+        with pytest_raises_value("NaN"):
+            bayes.compare(
+                data, models=[pred_a, pred_b],
+                precomputed={h_a: -1.0, h_b: _math.nan},
+                label="cmp_nan",
+            )
+        with pytest_raises_value(r"\+inf"):
+            bayes.compare(
+                data, models=[pred_a, pred_b],
+                precomputed={h_a: -1.0, h_b: _math.inf},
+                label="cmp_inf",
+            )
+        # -inf is OK ("zero-likelihood hypothesis").
+        bayes.compare(
+            data, models=[pred_a, pred_b],
+            precomputed={h_a: -1.0, h_b: -_math.inf},
+            label="cmp_neginf",
+        )
+    finally:
+        _current_package.reset(token)
+
+
+def pytest_raises_value(pattern: str):
+    """Tiny shim — ``pytest.raises(ValueError, match=pattern)`` w/o top-level pytest import."""
+    import pytest
+
+    return pytest.raises(ValueError, match=pattern)
 
 
 def test_external_solver_path_reproduces_mendel_canonical_posteriors():

@@ -26,20 +26,27 @@ def test_observe_distribution_returns_pinned_observation_claim():
 
 
 def test_observation_metadata_links_back_to_distribution():
+    """Distribution-target observation writes the unified schema.
+
+    Same shape as ``observe(Variable, value=, error=)`` so the Bayes
+    ``compare()`` lowering can read both paths through the same reader.
+    """
     T_c = Normal("T_c", mu=200, sigma=50)
     obs = observe(T_c, value=203, error=5)
     payload = obs.metadata["observation"]
-    assert payload["target_distribution"] is T_c
+    assert payload["target"] is T_c
     assert payload["value"] == 203.0
-    assert payload["error"] == 5.0
-    assert payload["kind"] == "continuous_observation"
+    # Scalar ``error=5`` is sugared into an anonymous Normal(0, 5) Distribution.
+    assert payload["noise"].kind == "normal"
+    assert payload["noise"].params["sigma"] == 5.0
+    assert payload["kind"] == "observation"
 
 
 def test_observe_distribution_without_error_is_noise_free():
     T_c = Normal("T_c", mu=200, sigma=50)
     obs = observe(T_c, value=203)
     payload = obs.metadata["observation"]
-    assert payload["error"] is None
+    assert payload["noise"] is None
 
 
 def test_observe_distribution_accepts_distribution_as_noise_model():
@@ -47,7 +54,7 @@ def test_observe_distribution_accepts_distribution_as_noise_model():
     noise = Normal("measurement noise", mu=0, sigma=5)
     obs = observe(T_c, value=203, error=noise)
     payload = obs.metadata["observation"]
-    assert payload["error"] is noise
+    assert payload["noise"] is noise
 
 
 def test_observe_distribution_rejects_noise_distribution_with_incompatible_unit():

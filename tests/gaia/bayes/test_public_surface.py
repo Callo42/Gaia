@@ -29,7 +29,6 @@ def test_bayes_canonical_peer_module_imports() -> None:
     from gaia.engine.bayes import (
         BayesInference,
         ModelComparison,
-        PrecomputedLikelihoods,
         Prediction,
         compare,
         predict,

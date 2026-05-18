@@ -1,31 +1,30 @@
-"""v0.6 Bayes ``compare`` verb — compare equal-positioned predictive models.
+"""Bayes ``compare`` verb — compare equal-positioned predictive models.
 
 ``compare(data, models=[m1, m2, ...])`` evaluates the log-likelihood of
 the observation Claim(s) ``data`` under each model's predictive
 distribution and emits one IR ``infer`` strategy per hypothesis. Each
 model is a helper Claim returned by :func:`predict`.
 
-This is the v0.6 replacement for ``bayes.likelihood(data, model=...,
-against=[...])``. Differences from v0.5:
+Key design points (vs the earlier in-flight Bayes alpha that this
+clean break replaces):
 
-* ``model=`` + ``against=[...]`` collapses to a single ``models=[...]``
+* ``model=`` + ``against=[...]`` is collapsed to a single ``models=[...]``
   list. The model the author "advocates" is no longer encoded in the
   API; it lives in Claim priors instead, where review can see it.
-* ``precomputed=`` accepts either the legacy ``dict[Claim, float]``
+* ``precomputed=`` accepts either the bare ``dict[Claim, float]``
   shortcut or a :class:`PrecomputedLikelihoods` Claim carrying solver
-  diagnostics.
-
-The legacy ``bayes.likelihood`` verb stays available; v0.6 lowering
-dispatches on :class:`ModelComparison` (this verb's Action), not on
-:class:`Likelihood`.
+  diagnostics. NaN / +inf log-likelihoods are rejected at the entry
+  point to prevent silent Cromwell-clamping.
 """
 
 from __future__ import annotations
 
 import hashlib
+import math
 import re
+from collections.abc import Mapping
 from itertools import combinations
-from typing import Any, Mapping
+from typing import Any
 
 from gaia.engine.bayes.runtime import ModelComparison, Prediction
 from gaia.engine.bayes.runtime.precomputed import PrecomputedLikelihoods
@@ -234,7 +233,29 @@ def _normalize_precomputed(
             details.append(f"missing {missing}")
         suffix = f": {', '.join(details)}" if details else ""
         raise ValueError("precomputed likelihoods must cover exactly the model hypotheses" + suffix)
-    coerced = {key: float(value) for key, value in likelihoods.items()}
+    coerced: dict[Claim, float] = {}
+    for key, raw in likelihoods.items():
+        value = float(raw)
+        # NaN means the wrapper failed to record a meaningful number; +inf
+        # would silently get clamped to Cromwell-max and dominate every
+        # other hypothesis. -inf is fine ("zero likelihood under this
+        # hypothesis"); the lowering already drops -inf-only comparisons
+        # via the "zero support under every hypothesis" check.
+        if math.isnan(value):
+            raise ValueError(
+                "compare(precomputed=...) log-likelihood for "
+                f"{key.label or key.content[:40]!r} is NaN. Fix the upstream "
+                "wrapper to record a real log-likelihood (or -inf for "
+                "zero-likelihood hypotheses), not a missing-value sentinel."
+            )
+        if math.isinf(value) and value > 0:
+            raise ValueError(
+                "compare(precomputed=...) log-likelihood for "
+                f"{key.label or key.content[:40]!r} is +inf. A finite "
+                "log-likelihood is required; +inf would silently dominate "
+                "the comparison via Cromwell clamping."
+            )
+        coerced[key] = value
     return coerced, claim_obj
 
 
@@ -297,6 +318,12 @@ def compare(
     )
     helper.label = label
 
+    if precomputed_claim is not None:
+        recorded_precomputed: Any = precomputed_claim
+    elif log_likelihoods:
+        recorded_precomputed = dict(log_likelihoods)
+    else:
+        recorded_precomputed = None
     action = ModelComparison(
         label=label,
         rationale=rationale,
@@ -306,7 +333,7 @@ def compare(
         models=models_tuple,
         data=data_tuple,
         exclusivity=exclusivity,
-        precomputed=precomputed_claim if precomputed_claim is not None else (dict(log_likelihoods) if log_likelihoods else None),
+        precomputed=recorded_precomputed,
         log_likelihoods=log_likelihoods,
     )
     validate_no_self_warrant(action, helper)

@@ -446,13 +446,7 @@ def _check_bayes_prediction(
             "unused prediction."
         )
 
-    target = _prediction_metadata(prediction).get("target") or {}
-    identifier: str | None = None
-    if isinstance(target, dict):
-        if target.get("kind") == "variable":
-            identifier = target.get("symbol") if isinstance(target.get("symbol"), str) else None
-        elif target.get("kind") == "distribution":
-            identifier = target.get("label") if isinstance(target.get("label"), str) else None
+    identifier = _target_descriptor_identifier(_prediction_metadata(prediction).get("target"))
     if (
         _is_local_ir_id(ir, prediction_id)
         and isinstance(identifier, str)
@@ -464,6 +458,27 @@ def _check_bayes_prediction(
             "matching observe(...) call. Fix: add observe(target, value=...) "
             "for the measured Variable or Distribution, or remove the unused prediction."
         )
+
+
+def _target_descriptor_identifier(target: Any) -> str | None:
+    """Extract the Variable symbol or Distribution label from a target descriptor.
+
+    The unified ``metadata["prediction"]["target"]`` and
+    ``metadata["observation"]["target"]`` payloads share the
+    ``{"kind": "variable", "symbol": ...}`` / ``{"kind": "distribution",
+    "label": ...}`` shape; this helper picks the human-facing identifier
+    so the comparison-data check can compare prediction-target vs
+    observation-target by name.
+    """
+    if not isinstance(target, dict):
+        return None
+    if target.get("kind") == "variable":
+        symbol = target.get("symbol")
+        return symbol if isinstance(symbol, str) else None
+    if target.get("kind") == "distribution":
+        label = target.get("label")
+        return label if isinstance(label, str) else None
+    return None
 
 
 def _check_bayes_comparison_data(
@@ -478,19 +493,12 @@ def _check_bayes_comparison_data(
 
     Reads the unified ``metadata["comparison"]["data"]`` list and verifies
     each referenced Claim carries a ``metadata["observation"]`` payload
-    with at least a ``value`` field. The earlier alpha relied on formula
-    AST bindings; the unified schema stores value and target inline as
-    metadata so the check is a direct dictionary lookup.
+    with at least a ``value`` field, and that its target matches the
+    prediction target by symbol / label. The unified schema stores value
+    and target inline as metadata so the check is a direct dictionary
+    lookup.
     """
-    target = model_prediction.get("target") or {}
-    expected_identifier: str | None = None
-    if isinstance(target, dict):
-        if target.get("kind") == "variable":
-            expected_identifier = target.get("symbol")
-        elif target.get("kind") == "distribution":
-            expected_identifier = target.get("label")
-    if not isinstance(expected_identifier, str):
-        expected_identifier = None
+    expected_identifier = _target_descriptor_identifier(model_prediction.get("target"))
 
     for data_id in comparison.get("data") or []:
         if not isinstance(data_id, str):
@@ -515,13 +523,7 @@ def _check_bayes_comparison_data(
                 "reviewable observation Claim."
             )
             continue
-        observed_target = observation.get("target")
-        observed_identifier: str | None = None
-        if isinstance(observed_target, dict):
-            if observed_target.get("kind") == "variable":
-                observed_identifier = observed_target.get("symbol")
-            elif observed_target.get("kind") == "distribution":
-                observed_identifier = observed_target.get("label")
+        observed_identifier = _target_descriptor_identifier(observation.get("target"))
         if (
             expected_identifier is not None
             and isinstance(observed_identifier, str)
@@ -617,7 +619,7 @@ def _check_v06_precomputed_solver_diagnostics(
     audited through the ``Compute`` action's ``code_hash``. We surface
     the gap so reviewers notice, not block compilation.
     """
-    for node_id, node in nodes.items():
+    for _node_id, node in nodes.items():
         metadata = node.get("metadata") or {}
         if metadata.get("kind") != "precomputed_likelihoods":
             continue

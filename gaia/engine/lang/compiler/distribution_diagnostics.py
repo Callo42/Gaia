@@ -95,7 +95,11 @@ def _observed_distribution_to_obs_claims(
         observation = (knowledge.metadata or {}).get("observation")
         if not isinstance(observation, dict):
             continue
-        target = observation.get("target_distribution")
+        # The unified observe() schema stores the target at
+        # ``metadata["observation"]["target"]`` for both Variable and
+        # Distribution targets; this diagnostic only cares about
+        # Distribution-target observations.
+        target = observation.get("target")
         if isinstance(target, Distribution):
             out.setdefault(id(target), []).append(knowledge)
     return out
@@ -145,7 +149,7 @@ def detect_observation_not_updating_predicate(
         # Recover the Distribution object from any of the observation claims
         # (they all share the same target).
         sample_obs = observed[dist_id][0]
-        target = sample_obs.metadata["observation"]["target_distribution"]
+        target = sample_obs.metadata["observation"]["target"]
         out.append((target, observed[dist_id], predicated[dist_id]))
     return out
 

@@ -1,16 +1,20 @@
 """Phase 0 Layer 2 — engine facade contract.
 
-Locks the 7-submodule public surface after the PR b engine reorg:
+Locks the 7-submodule public surface:
 
-- `gaia.engine.bayes` (20)
+- `gaia.engine.bayes` (6) — clean-break to the unified surface
+  (``predict`` / ``compare`` / ``Prediction`` / ``ModelComparison`` /
+  ``PrecomputedLikelihoods`` / ``BayesInference``); typed-value
+  distribution aliases moved to ``gaia.engine.lang``.
 - `gaia.engine.bp` (17)
 - `gaia.engine.ir` (36)
-- `gaia.engine.lang` (93)
+- `gaia.engine.lang` (94) — adds ``BetaBinomial`` factory used by both
+  Bayes hypothesis comparison and quantity-with-predicate surfaces.
 - `gaia.engine.inquiry` (45)
 - `gaia.engine.trace` (7)
 - `gaia.engine.packaging` (9)
 
-Total 227. Adding or removing a symbol from a facade `__all__` requires
+Total 214. Adding or removing a symbol from a facade `__all__` requires
 updating both `docs/reference/engine/index.md` and these counts.
 """
 
@@ -23,10 +27,10 @@ import pytest
 pytestmark = pytest.mark.pr_gate
 
 EXPECTED = {
-    "gaia.engine.bayes": 20,
+    "gaia.engine.bayes": 6,
     "gaia.engine.bp": 17,
     "gaia.engine.ir": 36,
-    "gaia.engine.lang": 93,
+    "gaia.engine.lang": 94,
     "gaia.engine.inquiry": 45,
     "gaia.engine.trace": 7,
     "gaia.engine.packaging": 9,
@@ -43,4 +47,4 @@ def test_facade_surface(module_name: str, expected: int) -> None:
 
 def test_grand_total() -> None:
     total = sum(len(importlib.import_module(m).__all__) for m in EXPECTED)
-    assert total == 227
+    assert total == 214

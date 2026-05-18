@@ -32,6 +32,7 @@ record can pass ``content=...`` explicitly.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -51,7 +52,7 @@ def _default_content(solver: str, n_hypotheses: int) -> str:
 class PrecomputedLikelihoods(Claim):
     """Externally computed log-likelihoods packaged as a Claim.
 
-    Attributes
+    Attributes:
     ----------
     log_likelihoods:
         Mapping from hypothesis :class:`Claim` (the original objects passed
@@ -94,6 +95,25 @@ class PrecomputedLikelihoods(Claim):
                     f"PrecomputedLikelihoods(log_likelihoods=...) value for "
                     f"{key.label or key.content[:40]!r} must be a numeric "
                     f"log-likelihood, got {type(value).__name__}: {value!r}."
+                )
+            float_value = float(value)
+            # NaN is never a meaningful log-likelihood; +inf would later be
+            # Cromwell-clamped to near-1 and silently dominate. -inf ("zero
+            # likelihood under this hypothesis") is allowed; the comparison
+            # lowering rejects the case where *all* hypotheses are -inf.
+            if math.isnan(float_value):
+                raise ValueError(
+                    "PrecomputedLikelihoods log-likelihood for "
+                    f"{key.label or key.content[:40]!r} is NaN. Fix the "
+                    "wrapper to record a real log-likelihood, not a missing "
+                    "sentinel."
+                )
+            if math.isinf(float_value) and float_value > 0:
+                raise ValueError(
+                    "PrecomputedLikelihoods log-likelihood for "
+                    f"{key.label or key.content[:40]!r} is +inf. A finite "
+                    "log-likelihood is required; +inf would silently dominate "
+                    "the comparison."
                 )
 
         resolved_content = content or _default_content(solver, len(likelihoods))

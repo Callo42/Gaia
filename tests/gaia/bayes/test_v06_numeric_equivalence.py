@@ -324,7 +324,9 @@ def test_precomputed_via_compute_decorator():
 
         @compute
         def mock_solver_run(
-            data: object, h_31: object, h_null: object
+            data: object,  # noqa: ARG001 — recorded as Compute action dependency
+            h_31: object,
+            h_null: object,
         ) -> PrecomputedLikelihoods:
             """Deterministic stub of an external solver."""
             return PrecomputedLikelihoods(
