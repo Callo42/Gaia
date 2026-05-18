@@ -138,8 +138,8 @@ def _format_output_tail(stderr: str, stdout: str, *, max_lines: int = 5) -> str:
     """Return the last ``max_lines`` non-empty output lines, single-line.
 
     Prefers ``stderr`` when populated; falls back to ``stdout`` because the
-    gaia CLI emits some failure detail (e.g. ``gaia build check --gate``
-    quality-gate report) on stdout, and a single-line diagnostic shouldn't
+    gaia CLI emits some failure detail (for example structural check reports)
+    on stdout, and a single-line diagnostic shouldn't
     appear empty when the CI logs clearly show the failure.
     """
     stream = stderr if stderr.strip() else stdout

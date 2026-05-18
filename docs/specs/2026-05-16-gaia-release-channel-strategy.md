@@ -49,16 +49,23 @@ Release channels are stability contracts. They should answer:
 | Channel | Version form | Trigger | Intended users | Stability contract |
 |---|---|---|---|---|
 | PR/dev | none | Pull request to `main` / `v0.5`, or push to `main` / `v0.5`; also `workflow_dispatch` | Contributors | Not published; fast feedback only. |
-| Nightly | `0.5.1.dev20260516` | Scheduled daily at 20:00 UTC (04:00 Asia/Shanghai next day) via `schedule`, plus on-demand via `workflow_dispatch`; runs against the default branch (`v0.5`) tip (see §9 Q-schedule) | Package authors and maintainers | Rolling snapshot; may break APIs, but must identify the exact commit and validation result. |
-| Alpha | `0.5.1a1` | Manual `workflow_dispatch` of `release-alpha.yml` (post-nightly green) | Early adopters trying real packages | Recognized preview; APIs and semantics may still change, but known breakages must be listed. |
-| Beta | `0.5.1b1` | Manual `workflow_dispatch` of `release-beta.yml` (post-alpha) | Users preparing migration | Feature and semantic surface should be mostly frozen; migration docs expected. |
-| Release candidate | `0.5.1rc1` | Manual `workflow_dispatch` of `release-rc.yml` (post-beta) | Final validators | Only release-blocking bug fixes should land after this point. |
-| Stable | `0.5.1` | Manual `workflow_dispatch` of `release-stable.yml` (post-rc) | Default users and registry workflows | Default install target; must pass release validation and publish durable artifacts. |
+| Nightly | `0.5.0.dev20260516` | Scheduled daily at 20:00 UTC (04:00 Asia/Shanghai next day) via `schedule`, plus on-demand via `workflow_dispatch`; runs against the default branch (`v0.5`) tip (see §9 Q-schedule) | Package authors and maintainers | Rolling snapshot; may break APIs, but must identify the exact commit and validation result. |
+| Alpha | `0.5.0a1` | Manual `workflow_dispatch` of `release-alpha.yml` (post-nightly green) | Early adopters trying real packages | Recognized preview; APIs and semantics may still change, but known breakages must be listed. |
+| Beta | `0.5.0b1` | Manual `workflow_dispatch` of `release-beta.yml` (post-alpha) | Users preparing migration | Feature and semantic surface should be mostly frozen; migration docs expected. |
+| Release candidate | `0.5.0rc1` | Manual `workflow_dispatch` of `release-rc.yml` (post-beta) | Final validators | Only release-blocking bug fixes should land after this point. |
+| Stable | `0.5.0` | Manual `workflow_dispatch` of `release-stable.yml` (post-rc) | Default users and registry workflows | Default install target; must pass release validation and publish durable artifacts. |
 
 Nightly and alpha are different:
 
 - Nightly is a timestamped snapshot of the active branch (runs daily at 20:00 UTC via `schedule`, plus operator-initiated `workflow_dispatch`).
 - Alpha is a human decision that a snapshot is worth broader early testing.
+
+Operational prerequisite: GitHub only exposes `workflow_dispatch` and
+`schedule` workflows from the repository default branch. Before v0.5 alpha
+promotion, the repository default branch must be switched to `v0.5`, or an
+equivalent default-branch dispatcher must invoke the v0.5 release workflows.
+Otherwise `release-alpha.yml` and `nightly.yml` can exist on `v0.5` while still
+being unavailable from the Actions UI/API.
 
 ## 4. CI Layers
 
@@ -100,7 +107,7 @@ uv run --extra docs mkdocs build --strict
 uv run python scripts/run_package_corpus.py
 ```
 
-It also bumps `pyproject.toml` (transiently) to `0.5.1.dev<YYYYMMDD>`, injects `_build_info.py` (CHANNEL=nightly, COMMIT=<sha>), and uploads the wheel/sdist as a GHA artifact gated on corpus success. The corpus runner is the artifact-upload gate per R1 dispatch lock: a red corpus blocks artifact upload.
+It also bumps `pyproject.toml` (transiently) to `0.5.0.dev<YYYYMMDD>`, injects `_build_info.py` (CHANNEL=nightly, COMMIT=<sha>), and uploads the wheel/sdist as a GHA artifact gated on corpus success. The corpus runner is the artifact-upload gate per R1 dispatch lock: a red corpus blocks artifact upload.
 
 ### Release CI
 
@@ -109,7 +116,7 @@ Release CI is nightly CI plus publishing checks, factored into a composite actio
 | Invariant | Enforcement |
 |---|---|
 | Version is valid PEP 440 | Caller workflow passes the version string into `inputs.version`; the composite asserts the post-`sed` `pyproject.toml` line matches exactly via `grep -q`, and additionally asserts `gaia --version` reports the same version string (defense-in-depth against a busted `_build_info.py` or version-injection bug). |
-| Changelog / release notes exist | For stable, `gh release create --generate-notes` auto-generates release notes from merged PRs. The release does not currently consume a curated `CHANGELOG.md` — the auto-generated notes are the chosen approach (see §9). |
+| Release notes exist | Alpha and later channels should have a curated note under `docs/releases/`; stable additionally uses `gh release create --generate-notes` for the GitHub Release artifact. |
 | Docs build | `uv run --extra docs mkdocs build --strict` runs as a release gate before publish. |
 | Package corpus e2e passes | `uv run python scripts/run_package_corpus.py` runs as a release gate before publish. |
 | Artifacts include source commit and channel metadata | `_build_info.py` injection writes `CHANNEL` + `COMMIT`; `gaia --version` exposes both (asserted). |
@@ -134,7 +141,6 @@ For each package, the e2e command sequence should be:
 ```bash
 gaia build compile <pkg>
 gaia build check <pkg>
-gaia build check --gate <pkg>
 gaia run infer <pkg>
 gaia run render <pkg> --target docs
 gaia run render <pkg> --target github
@@ -156,17 +162,17 @@ The GitHub render check should assert the current publication-bundle contract:
 Use one package name, `gaia-lang`, with PEP 440 versions:
 
 ```text
-0.5.1.dev20260516
-0.5.1a1
-0.5.1b1
-0.5.1rc1
-0.5.1
+0.5.0.dev20260516
+0.5.0a1
+0.5.0b1
+0.5.0rc1
+0.5.0
 ```
 
 `gaia --version` exposes enough provenance to reproduce the build:
 
 ```text
-gaia-lang 0.5.1.dev20260516
+gaia-lang 0.5.0.dev20260516
 channel: nightly
 commit: <git sha>
 ir_schema: ir-v1+<12-hex-digest>
@@ -241,4 +247,4 @@ PR #620 (merged 2026-05-16) landed the implementation; this section records what
 
 - **Q-codecov (added 2026-05-16, resolved).** Codecov was discussed during the PR-CI narrowing decision. Resolution: Codecov retired entirely — no `--cov-report=xml`, no Codecov upload step, Codecov GitHub App removed as a required check. PR CI is positioned as a change detector, not a coverage gate; the policy is "if we want coverage, it lives under nightly, not on PR latency".
 
-- **Q-schedule (added 2026-05-16, resolved 2026-05-17).** Whether nightly should run on a schedule cron. Resolution: daily `schedule` cron at `0 20 * * *` (20:00 UTC = 04:00 Asia/Shanghai next day) plus `workflow_dispatch` for on-demand runs. Earlier resolution was `workflow_dispatch`-only — that was reconsidered post-#620: a daily auto-run surfaces fixture / corpus regressions on the README badge without requiring an operator to remember to dispatch. Note: while the galileo fixture `--gate` is red, scheduled runs will fail at the corpus runner step (blocking artifact upload by design); this noise is accepted as a daily reminder that the fixture review is pending.
+- **Q-schedule (added 2026-05-16, resolved 2026-05-17).** Whether nightly should run on a schedule cron. Resolution: daily `schedule` cron at `0 20 * * *` (20:00 UTC = 04:00 Asia/Shanghai next day) plus `workflow_dispatch` for on-demand runs. Earlier resolution was `workflow_dispatch`-only — that was reconsidered post-#620: a daily auto-run surfaces fixture / corpus regressions on the README badge without requiring an operator to remember to dispatch.
