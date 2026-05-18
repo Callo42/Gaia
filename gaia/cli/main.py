@@ -1,21 +1,21 @@
 """Gaia CLI — knowledge package authoring toolkit.
 
-The CLI organizes verbs into 9 groups + `trace` independent:
+The CLI organizes verbs into explicit top-level groups:
 
   build    init / compile / check
   run      infer / render
   inspect  starmap / starmap-replay
   review   (empty skeleton — held for downstream reviewer tooling)
   inquiry  (sub-app: focus / review / obligation / hypothesis / tactics / reject)
-  pkg      add / register / scaffold
+  pkg      add / add-import / add-module / register / scaffold
   author   claim / equal / derive / note / question / contradict / exclusive /
            decompose / observe / compute / infer / associate / parameter /
-           register-prior / depends-on / candidate-relation / materialize /
-           compose / composition
-  bayes    model / compare / distribution factories
+           register-prior / variable / depends-on / candidate-relation /
+           materialize / compose / composition
+  bayes    model / compare / distribution literals
   example  galileo / mendel (print or save the cli walkthrough for a
            shipping v0.5 example package)
-  trace    (sub-app, NOT part of the groups: verify / review / show)
+  trace    (independent sub-app: verify / review / show)
 
 See `docs/migration.md` for guidance on moving off pre-alpha-0 invocations.
 """
@@ -202,12 +202,12 @@ app.add_typer(inquiry_app, name="inquery", hidden=True)  # typo alias
 
 
 # --------------------------------------------------------------------------- #
-# pkg — add / register / scaffold                                             #
+# pkg — add / add-import / add-module / register / scaffold                    #
 # --------------------------------------------------------------------------- #
 
 pkg_app = typer.Typer(
     name="pkg",
-    help="Package operations (add / register / scaffold).",
+    help="Package operations (add / add-import / add-module / register / scaffold).",
     no_args_is_help=True,
 )
 pkg_app.command(name="add")(add_command)
@@ -219,13 +219,13 @@ app.add_typer(pkg_app, name="pkg")
 
 
 # --------------------------------------------------------------------------- #
-# author — agent-first authoring CLI (19 verbs: 17 statement-emitting +     #
+# author — agent-first authoring CLI (20 verbs: 18 statement-emitting +     #
 #          2 file-based validate-and-register)                                #
 # --------------------------------------------------------------------------- #
 #
 # The author group is the cli-as-client surface that lets an LLM agent
 # (or a human) CRUD Gaia DSL statements through structured commands
-# instead of editing `.gaia.py` source by hand. 17 statement-emitting
+# instead of editing `.gaia.py` source by hand. 18 statement-emitting
 # verbs share the same pre-write + envelope skeleton; ``compose`` /
 # ``composition`` use a file-based validate-and-register surface (see
 # gaia.cli.commands.author.compose).
@@ -235,7 +235,7 @@ author_app = typer.Typer(
     help=(
         "Author DSL statements (claim / equal / derive / note / question / "
         "contradict / exclusive / decompose / observe / compute / infer / "
-        "associate / parameter / register-prior / depends-on / "
+        "associate / parameter / register-prior / variable / depends-on / "
         "candidate-relation / materialize / compose / composition)."
     ),
     no_args_is_help=True,

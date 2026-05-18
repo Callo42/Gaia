@@ -8,14 +8,20 @@ since: v0.5
 
 ## Overview
 
-The Gaia CLI is a knowledge package authoring toolkit. The main authoring pipeline takes a Python DSL package from scaffolding to registry registration:
+The Gaia CLI is a knowledge package authoring toolkit. The main authoring
+pipeline takes a Python DSL package from scaffolding to registry registration;
+authors may either edit Python files directly or use the agent-facing
+`gaia author` / `gaia bayes` commands to append DSL statements:
 
 ```
-gaia build init --> gaia pkg add --> write package --> gaia build compile --> gaia build check --> gaia run infer --> gaia run render --> git tag --> gaia pkg register
-(scaffold)   (add deps)    (DSL code)      (DSL -> IR)     (validate)    (BP)            (present)              (registry PR)
+gaia build init/pkg scaffold --> gaia pkg add --> write package or gaia author/bayes --> gaia build compile --> gaia build check --> gaia run infer --> gaia run render --> git tag --> gaia pkg register
+(scaffold)                  (add deps)    (DSL code / cli-as-client)       (DSL -> IR)     (validate)    (BP)            (present)              (registry PR)
 ```
 
-Two side-channel command groups support the authoring loop without producing or modifying IR / priors / beliefs:
+Supporting command groups cover review, trace audit, and visualization. They
+are not interchangeable: `inquiry` maintains review-state ledgers, `trace`
+audits externally recorded ARM trace files and can write review snapshots, and
+`inspect` writes graph visualization artifacts.
 
 ```
 gaia inquiry  — local review loop (focus / obligation / hypothesis / review)
@@ -328,9 +334,12 @@ gaia pkg register [PATH] [--tag TAG] [--repo URL] [--registry-dir PATH]
 Reference: [Registration](registration.md) for details.
 
 
-## Authoring Side-Channels
+## Supporting Review / Trace / Visualization Commands
 
-These commands support the authoring loop but do not produce or mutate IR, priors, or beliefs. They read what `gaia build compile` and `gaia run infer` already wrote.
+These commands support the authoring loop around compiled IR and beliefs.
+They do not edit Python DSL source. `inquiry` persists inquiry/review state,
+`trace review` can persist trace-review snapshots, and `inspect starmap`
+persists visualization artifacts.
 
 ### `gaia inquiry`
 
@@ -394,6 +403,9 @@ playback of an LKM discovery run. It expects
 | Stage    | Command          | Key Artifacts |
 |----------|------------------|---------------|
 | Init     | `gaia build init`      | `pyproject.toml` with `[tool.gaia]`, `src/<import_name>/__init__.py` with DSL template |
+| Scaffold | `gaia pkg scaffold` | Minimal agent-facing package skeleton with `pyproject.toml`, `src/<import_name>/__init__.py`, `.gaia/.gitkeep` |
+| Author   | `gaia author` / `gaia bayes` | Appended Python DSL statements in package source files |
+| Module plumbing | `gaia pkg add-module` / `gaia pkg add-import` | Sibling Python modules and idempotent import lines |
 | Compile  | `gaia build compile`   | `.gaia/ir.json`, `.gaia/ir_hash`, `.gaia/compile_metadata.json`, `.gaia/formalization_manifest.json`, `.gaia/manifests/{exports,premises,holes,bridges}.json` |
 | Check    | `gaia build check`     | (validation only) |
 | Add      | `gaia pkg add`       | Updated `pyproject.toml` dependencies, `uv.lock` |

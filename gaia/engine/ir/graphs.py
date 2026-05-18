@@ -39,10 +39,11 @@ def _canonicalize_operator_dump(data: dict[str, Any]) -> dict[str, Any]:
     canonical = dict(data)
     variables = list(canonical.get("variables", []))
     operator = canonical.get("operator")
-    # §2.4: variables are inputs only (conclusion is separate), sort for canonical order
+    # §2.4: variables are inputs only (conclusion is separate). Sort only
+    # symmetric operators; implication preserves antecedent/consequent order.
     if operator in {"equivalence", "contradiction", "complement", "disjunction", "conjunction"}:
         canonical["variables"] = sorted(variables)
-    # implication: single variable, no sorting needed
+    # implication: ordered variables, no sorting.
     return canonical
 
 

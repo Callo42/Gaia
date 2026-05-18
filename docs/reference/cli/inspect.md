@@ -12,10 +12,10 @@ gaia inspect starmap-replay [path]     Animated replay of an LKM discovery run
 | `starmap` | Static / interactive view of the compiled `LocalCanonicalGraph` |
 | `starmap-replay` | Replay retrieval and graph-growth events from an LKM run |
 
-Option flags match the historical flat form
+The historical flat inspect verbs moved under this group
 (`gaia starmap --format svg` → `gaia inspect starmap --format svg`). See
-[CLI Commands](../../for-users/cli-commands.md) for the
-full option surface and examples.
+[CLI Commands](../../for-users/cli-commands.md) for workflow examples and
+use `gaia inspect <verb> --help` for the executable option surface.
 
 ## Implementation
 

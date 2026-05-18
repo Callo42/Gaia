@@ -27,7 +27,7 @@ Every authored Action that survives lowering produces at least one **review targ
 | `Infer` / `Associate` | `strategy` | "Are the supplied conditional probabilities for &lt;action_label&gt; defensible?" |
 | `Equal / Contradict / Exclusive` (`Relation`) and `Decompose` | `operator` | "Is the declared relation or decomposition from &lt;action_label&gt; correct?" |
 | `Compose` | `compose` | "Is the composed workflow &lt;action_label&gt; well-formed and faithful to its child actions?" |
-| Reviewable helper claims (e.g. `bayes` likelihood comparison) | `knowledge` | "Does the helper claim &lt;label&gt; correctly summarize the underlying lifted likelihood update?" |
+| Reviewable helper claims (e.g. `bayes.compare` model comparison) | `knowledge` | "Does the helper claim &lt;label&gt; correctly summarize the underlying lifted model-data comparison?" |
 
 `DependsOn` and `CandidateRelation` (`Scaffold`) are intentionally not reviewable — they are authoring metadata only and never enter the IR. Structural-expression helper claims from the deprecated compatibility functions `not_(...)`, `and_(...)`, and `or_(...)` carry `metadata["review"] = false` and are also skipped. Modern `~A` / `A & B` / `A | B` shortcuts return Formula nodes, not review targets by themselves; once wrapped in `claim(..., formula=...)`, the authored claim and lowered formula operators follow the normal formula-claim path.
 
@@ -139,12 +139,13 @@ targets appear as `UNREVIEWED`; targets that disappeared from the IR are
 dropped on the next compile. `latest_reviews()` returns the highest-round
 status per target, suitable for downstream gating.
 
-The merged manifest is what `gaia inquiry review`, `gaia build check --gate`, and
-publish/register quality checks consult when deciding whether an authored
-warrant has passed review. `gaia run infer` is deliberately more permissive: it
-lowers the compiled graph for a local numerical preview regardless of manifest
-status. Accepted, rejected, and unreviewed are qualitative states, not hidden
-probability parameters.
+The merged manifest is what `gaia inquiry review` and `gaia build check --gate`
+consult when deciding whether an authored warrant has passed review. Current
+`gaia pkg register` validates package/release mechanics and writes registry
+metadata; it does **not** consult `.gaia/review_manifest.json`. `gaia run infer`
+is deliberately more permissive: it lowers the compiled graph for a local
+numerical preview regardless of manifest status. Accepted, rejected, and
+unreviewed are qualitative states, not hidden probability parameters.
 
 ### Quality Gate Criteria
 
@@ -163,7 +164,11 @@ change the gate result.
 
 Source: `gaia/cli/commands/trace.py`, `gaia/engine/trace/review.py:run_trace_review`. Spec: `docs/specs/2026-...` ARM Trace Reviewer (PR #491).
 
-The trace pipeline records every reasoning event emitted during `gaia run infer` and other agent-side workflows into a hash-chained `.json` / `.jsonl` file. The trace is independent of the inference numerical result — its purpose is to make the *reasoning process* itself auditable.
+The trace CLI audits externally recorded ARM trace `.json` / `.jsonl` files.
+`gaia run infer` currently writes `.gaia/beliefs.json` and does not emit a trace
+file by itself. A trace is independent of the inference numerical result — its
+purpose is to make the *reasoning process* itself auditable when an agent or
+orchestrator records one.
 
 | Sub-command | Purpose | Exit codes |
 |---|---|---|
@@ -199,8 +204,11 @@ The `--mode publish` ranking weighs diagnostics differently: it is meant to gate
 
          ↓ feeds ↓
 
-        review/gate and publish/register checks
-        (ACCEPTED warrants pass; rejected or missing reviews block release)
+       review/gate checks (`gaia build check --gate`)
+       (ACCEPTED warrants pass; rejected or missing reviews fail the gate)
+
+       Future registry policy may require the same gate before release;
+       current `gaia pkg register` does not read the review manifest.
 
    gaia run infer is parallel to this gate: it lowers the compiled graph for a
    local numerical preview and writes `.gaia/beliefs.json` without requiring

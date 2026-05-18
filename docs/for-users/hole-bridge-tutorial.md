@@ -22,11 +22,13 @@ Given an exported conclusion, Gaia computes its dependency closure during `gaia 
 
 Those results are written into:
 
-- `exports.json`
-- `premises.json`
-- `holes.json`
-- `bridges.json`
+- `.gaia/manifests/exports.json`
+- `.gaia/manifests/premises.json`
+- `.gaia/manifests/holes.json`
+- `.gaia/manifests/bridges.json`
 
+When a package is registered, the same manifest files are copied into the
+registry release directory under `packages/<name>/releases/<version>/`.
 `holes.json` is just the `local_hole` subset of `premises.json`.
 
 ## Package A: Produce A Hole

@@ -159,6 +159,7 @@ strategy_id = lcs_{SHA-256(scope + type + sorted(premises) + conclusion + struct
 - imported external occurrences
 - 它们参与的 `Operator` / `Strategy` / `Compose` 引用关系
 - `Compose.{compose_id, name, version, sorted(inputs), sorted(background), actions, sorted(warrants), conclusion, metadata}`
+- `formula_graphs` 的 canonicalized nodes / edges
 
 因此，external references 不是 graph hash 之外的"隐式上下文"；一旦进入 IR，它们就是 canonical serialization 的组成部分。
 

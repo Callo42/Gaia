@@ -199,7 +199,10 @@ Scaffold actions compile only into `.gaia/formalization_manifest.json`. They are
 
 The compiler (`gaia/engine/lang/compiler/compile.py`) walks the package's registered actions in declaration order and projects each one onto IR objects. Three things happen for every action:
 
-1. **Action QID assigned.** `_action_label(action, pkg, action_index)` returns `{namespace}:{package}::{label or _anon_action_NNN}`.
+1. **Action QID assigned.** `_action_label(action, pkg, action_index)` returns
+   `{namespace}:{package}::action::{label or _anon_action_NNN}`. Scaffold and
+   materialization helpers use sibling namespaces:
+   `::scaffold::{label}` and `::materialization::{label}`.
 2. **Lowered target produced.** Depending on the action subclass (table below), one or more IR objects are created.
 3. **Reverse linkage attached.** The action QID is written to the lowered objects' `metadata["action_label"]` and recorded in two tables on the `CompiledPackage`:
    - `action_label_map: dict[str, str]` — action QID → primary IR target QID
@@ -209,7 +212,8 @@ The compiler (`gaia/engine/lang/compiler/compile.py`) walks the package's regist
 
 | Action subclass | IR target | Helper claim emitted | Primary target for label resolution |
 |---|---|---|---|
-| `Derive / Observe / Compute` | `FormalStrategy` (conjunction + directed implication) | `implication_warrant` (review=true) | Strategy ID → warrant helper Claim QID (via `metadata['warrants']`) |
+| `Derive / Compute`, and `Observe` with premises | `FormalStrategy` (conjunction + directed implication) | `implication_warrant` (review=true) | Strategy ID → warrant helper Claim QID (via `metadata['warrants']`) |
+| `Observe` with no premises | no Strategy | none | action QID → observed Claim QID |
 | `Infer` | `Strategy(type=infer)` with CPT | warrant helper Claim (review=true) | Strategy ID → warrant helper Claim QID |
 | `Associate` | `Strategy(type=associate)` with pairwise CPT | association helper Claim (review=true) | Strategy ID → association helper Claim QID |
 | `Equal` | `Operator(operator=equivalence)` | `equivalence_result` helper (review=true) | Operator ID → helper Claim QID |
@@ -301,7 +305,8 @@ Schema reference: `docs/specs/2026-05-04-claim-formula-schema-design.md`.
 
 ## 6. Bayes Module
 
-`gaia.engine.bayes` provides the lifted authoring surface for model-data likelihood updates:
+`gaia.engine.bayes` provides the lifted authoring surface for model-data
+comparisons:
 
 - **Distribution Knowledge factories.** `Normal("T_c", mu=..., sigma=...)`, `Binomial("k", n=..., p=...)`, etc., imported from `gaia.engine.lang`. They are `Distribution(Knowledge)` nodes with identity, label, and provenance; the scipy-backed pydantic backend at `gaia.engine.bayes.distributions` is internal.
 - **`bayes.model(hypothesis, observable=..., distribution=...)`.** Returns a predictive-model helper Claim backed by a `Model(BayesInference)` record that ties one hypothesis Claim to one predictive distribution over a Variable observable.
@@ -348,7 +353,7 @@ Operators encode **deterministic logical constraints**. Each operator type has a
 
 | Operator | `variables` | `conclusion` |
 |----------|-------------|--------------|
-| `implication` | exactly 1 (antecedent A) | consequent B |
+| `implication` | exactly 2 (`antecedent`, `consequent`) | helper claim representing `antecedent -> consequent` |
 | `equivalence` | exactly 2 (A, B) | helper claim |
 | `contradiction` | exactly 2 (A, B) | helper claim |
 | `complement` | exactly 2 (A, B) | helper claim |
@@ -359,16 +364,20 @@ The `conclusion` never appears in `variables` — inputs and output are strictly
 
 ### 8.2 Truth Tables
 
-All potentials use Cromwell softening: logical "true" maps to `1 - eps`, logical "false" maps to `eps`, where `eps = CROMWELL_EPS = 1e-3`.
+Deterministic operator potentials use strict truth-table values: logical
+"true" maps to `1.0` and logical "false" maps to `0.0`. Cromwell softening
+is reserved for unary evidence/priors and soft probabilistic parameters, not
+for deterministic logical factors.
 
-**Implication** — `implication_potential(A, B)`: forbid A=1, B=0.
+**Implication** — `implication_potential(A, B, H)`, where `H` is the helper
+claim asserting `A -> B`: when `H=1`, forbid A=1, B=0.
 
 | A | B | psi |
 |---|---|-----|
-| 0 | 0 | 1 - eps |
-| 0 | 1 | 1 - eps |
-| 1 | 0 | eps |
-| 1 | 1 | 1 - eps |
+| 0 | 0 | 1 |
+| 0 | 1 | 1 |
+| 1 | 0 | 0 |
+| 1 | 1 | 1 |
 
 **Conjunction** — `conjunction_potential(inputs, M)`: M = AND(inputs).
 
@@ -437,10 +446,10 @@ Operators that emit a relation-result conclusion (`equivalence`, `contradiction`
 
 Identity assignment:
 
-- **Knowledge IDs.** Local declarations get QIDs from the package's namespace and name. Anonymous nodes get auto-generated labels (`_anon_001`, `_anon_002`, ...).
-- **Action IDs.** Same QID space; anonymous actions get `_anon_action_001`, etc.
+- **Knowledge IDs.** Local declarations get QIDs from the package's namespace and name. Anonymous nodes get counter labels starting at `_anon_000`.
+- **Action IDs.** Action QID namespace; anonymous actions get `_anon_action_NNN`.
 - **Strategy IDs.** Deterministically computed as `lcs_{SHA-256(scope | type | sorted(premises) | conclusion | structure_hash)[:16]}`.
-- **Operator IDs.** Top-level operators get `lco_{SHA-256(operator | sorted(var_ids) | conclusion_id)[:16]}`.
+- **Operator IDs.** Top-level operators get `lco_{...}` from the canonical operator dump. Symmetric operators sort `variables`; ordered operators such as `implication` preserve variable order.
 - **Compose IDs.** `lcm_{structure_hash}` over the canonicalized payload.
 
 Reference: [Identity And Hashing](../gaia-ir/03-identity-and-hashing.md), [Lowering](../gaia-ir/07-lowering.md).

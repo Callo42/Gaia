@@ -12,10 +12,10 @@ gaia run render [path]    Generate docs / GitHub / Obsidian outputs
 | `infer` | Choose Junction Tree / TRW-BP / Mean Field VI based on graph size and treewidth; write `.gaia/beliefs.json` |
 | `render` | Emit `docs/`, `.github-output/`, or `gaia-wiki/` artifacts using compiled IR and (optionally) beliefs |
 
-Option flags match the historical flat form
+The historical flat run verbs moved under this group
 (`gaia infer --depth 1 <path>` → `gaia run infer --depth 1 <path>`). See
-[CLI Commands](../../for-users/cli-commands.md) for the full
-option surface and examples.
+[CLI Commands](../../for-users/cli-commands.md) for workflow examples and
+use `gaia run <verb> --help` for the executable option surface.
 
 ## Implementation
 

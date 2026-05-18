@@ -1,6 +1,8 @@
 # Gaia 产品范围
 
-> **Status:** Current canonical
+> **Status:** Current product direction. Current v0.5 implementation is the
+> local Python DSL + CLI; LKM/server capabilities below are target ecosystem
+> services, not code shipped in this repository.
 
 > 相关文档：
 > - [Gaia IR design](../gaia-ir/01-overview.md)
@@ -20,7 +22,10 @@
 
 ### 目标：大型知识模型
 
-Gaia 的目标是构建一个 **Large Knowledge Model (LKM)**——一个十亿级规模的推理超图，其中命题是节点，推理关系是超边。LKM 由云端的 AI 代理自动构建，而非由人工手动创建。
+Gaia 的目标生态是构建一个 **Large Knowledge Model (LKM)**——一个十亿级
+规模的推理超图，其中命题是节点，推理关系是超边。当前 v0.5 仓库提供
+的是本地 Python DSL、CLI、IR、review、registry 和 BP 基础；云端 LKM
+自动构建属于后续服务层。
 
 这需要一种**机器可读、机器可写的知识表示**，支持：
 
@@ -88,9 +93,12 @@ Gaia 结合了三种没有任何现有工具能同时提供的能力：
 
 1. **基于包的结构化知识表示**——声明、链、模块、包，以及明确的结构降级
 2. **认知概率推理**——先验、信念、依赖角色、矛盾/撤回语义——根植于 Jaynes 的概率即逻辑传统
-3. **超图 Belief Propagation**——在从知识包结构派生的因子图上自动选择 Junction Tree、TRW-BP 或 Mean Field VI，计算整个 LKM 上自洽的信念
+3. **超图 Belief Propagation**——当前本地 CLI 在从知识包结构派生的因子图上自动选择 Junction Tree、TRW-BP 或 Mean Field VI；整个 LKM 上的全局自洽信念属于目标服务层
 
-这种组合使核心产品成为可能：**AI 代理编写知识包（概率程序），云端运行 Belief Propagation（后验推理），结果是一个大型知识模型，其中每个命题都携带校准的信念度。**
+这种组合使核心产品方向成为可能：**AI 代理编写知识包（概率程序），
+本地 CLI 给出可复现实验级 posterior preview，目标云端服务在通过
+review/registry 后运行更大规模的 Belief Propagation（后验推理），结果
+是一个大型知识模型，其中每个命题都携带校准的信念度。**
 
 ## 产品方向（已决定）
 

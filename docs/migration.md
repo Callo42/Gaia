@@ -1,8 +1,9 @@
 # Migration to alpha 0
 
-Alpha 0 introduces the `gaia.engine.*` Python contract and reorganizes the
-CLI into 6 logical groups plus the independent `trace` sub-app. This guide
-covers the three migration layers you may need to update:
+Alpha 0 introduces the `gaia.engine.*` Python contract and moves the old flat
+CLI verbs under grouped paths. The current v0.5 CLI also includes net-new
+agent-facing groups such as `author` and `bayes`. This guide covers the three
+migration layers you may need to update:
 
 1. **CLI verb migration** — how to update `gaia <verb>` invocations.
 2. **Import path migration** — how to update `from gaia.<sub> import ...`
@@ -26,9 +27,10 @@ this is the work needed to get it green again.
 
 ## Layer 1: CLI verb migration
 
-The historical 9 flat top-level verbs have been reorganized into 6 groups.
-`inquiry` and `trace` are sub-apps and were already groups; their internal
-subcommands are **unchanged**.
+The historical 9 flat top-level verbs have been moved into grouped paths.
+`inquiry` and `trace` were already sub-apps and keep their internal
+subcommands unchanged. `author`, `bayes`, `pkg scaffold`, `pkg add-import`,
+and `pkg add-module` are current v0.5 additions, not old flat-verb mappings.
 
 | Old (flat — removed) | New (grouped) |
 |---|---|
@@ -51,7 +53,9 @@ subcommands are **unchanged**.
 | `inspect` | `starmap` / `starmap-replay` | Visualize the compiled graph |
 | `review` | *(skeleton — no commands yet)* | Reserved for downstream reviewer tooling |
 | `inquiry` | `focus` / `review` / `obligation [add\|list\|close]` / `hypothesis [add\|list\|remove]` / `tactics log` / `reject` | Local semantic inquiry loop *(unchanged)* |
-| `pkg` | `add` / `register` | Install and publish packages |
+| `pkg` | `add` / `add-import` / `add-module` / `register` / `scaffold` | Install dependencies, manage package modules/imports, publish, and bootstrap packages |
+| `author` | `claim` / `note` / `question` / `derive` / `observe` / `compute` / `infer` / relation and scaffold verbs / `compose` | Agent-first DSL authoring helpers |
+| `bayes` | `model` / `compare` / distribution literals | Bayesian model and distribution authoring helpers |
 | `trace` | `verify` / `review` / `show` | ARM Trace tooling *(unchanged, independent)* |
 
 > **Note on `review` vs. `inquiry review` / `trace review`**: the new

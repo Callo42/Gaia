@@ -14,10 +14,10 @@ gaia build check [path]     Validate structure, priors, and warrants
 | `compile` | Execute the DSL declarations, lower to `LocalCanonicalGraph`, write IR + manifests + hash |
 | `check` | Validate `pyproject.toml`, IR hash, schema, naming, priors, warrants, and quality gate |
 
-Option flags on each verb match the historical flat form
+The historical flat build verbs moved under this group
 (`gaia compile <path>` → `gaia build compile <path>`). See
-[CLI Commands](../../for-users/cli-commands.md) for the
-full option surface and examples.
+[CLI Commands](../../for-users/cli-commands.md) for workflow examples and
+use `gaia build <verb> --help` for the executable option surface.
 
 ## Implementation
 

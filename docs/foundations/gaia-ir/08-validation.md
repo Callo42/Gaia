@@ -53,7 +53,7 @@ validation 的职责是**验证结构合法性**。
 4. 若某处把它当作可取真值命题引用（如 Operator `variables` / `conclusion` 或 Strategy `premises` / `conclusion`），则其 `type` 必须是 `claim`
 5. 含 `parameters` 的 claim 仍然是 claim，不是独立类型
 6. helper claim 仍然是 `claim`，不能引入新的 Knowledge primitive
-7. 结构型 helper claim **禁止**携带独立的 `PriorRecord`——它们不引入新的中间命题或新的前提，其值由 Operator 确定性决定（见 [04-helper-claims.md](04-helper-claims.md)）
+7. 结构型 helper claim 不应携带独立 prior；当前 validator 硬拒绝 structural-expression helper 上的 `metadata["prior"]`，更宽的 PriorRecord 入口由 package compile/check 与 review 规则约束（见 [04-helper-claims.md](04-helper-claims.md)）
 8. `composition` 的 `sub_knowledge` / `conclusion` graph-closure 约束是设计不变量；当前 graph-level validator 只校验字段形态，尚未解析这些引用或强制 `conclusion` 指向 `claim`
 9. `label` 在同一 `LocalCanonicalGraph` 内必须唯一
 10. `LocalCanonicalGraph.namespace` / `package_name` 约束自动生成的本地 QID；显式写入的 foreign QID 允许作为 external reference 出现在 graph 中
@@ -134,7 +134,7 @@ helper claim 的命名纪律见 [04-helper-claims.md](04-helper-claims.md)。
 3. 不允许引用未在当前 graph 中显式物化的对象；external reference 若参与引用，也必须先作为 `Knowledge` 出现在当前 graph 中
 4. `ir_hash` 若定义，则必须与 canonical serialization 一致
 5. 同一 graph 内不应出现重复 ID
-6. `namespace` 必须属于允许集合（`reg` | `paper`）
+6. `namespace` 是自由字符串；validator 不限制为固定集合，只校验对象 ID / QID 形状和 graph-local 引用闭包
 
 identity 与 hashing 的细节见 [03-identity-and-hashing.md](03-identity-and-hashing.md)。
 

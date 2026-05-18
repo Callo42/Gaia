@@ -101,14 +101,15 @@ print(f"treewidth ≈ {tw}")
 
 ## 4. 什么时候应该手动覆盖 auto
 
-`InferenceEngine.run(method=...)` 接受 `"auto"` / `"jt"` / `"trw_bp"` / `"mean_field"`。下列场景应当显式指定：
+`InferenceEngine.run(method=...)` 接受 `"auto"` / `"jt"` / `"trw_bp"` /
+`"mean_field"` / `"exact"`。下列场景应当显式指定：
 
 | 场景 | 建议显式 method | 理由 |
 |---|---|---|
 | 大图（n > 2000）但 belief 数值要求高 | `"trw_bp"` | 绕过 MF VI 的 30%~79% 误差。代价：可能跑 30 秒到几分钟。仓库目前推荐这条 escape hatch，参见 [`inference.md`](inference.md) 「实现」一节的算法选择策略第 1 条。 |
 | 中等图（n ~ 1000）且 treewidth 接近 20，要复现别人 JT 结果 | `"jt"` | 强制 JT；如果 treewidth 实际 > 20 会触发内存/时间爆炸——所以仅在你**已经知道** treewidth ≤ 20 时用。 |
 | 调试 BP 收敛性、对比两个算法 | `"trw_bp"` 然后 `"jt"` 各跑一次 | 比较 `result.beliefs` 看分歧位置；高 `direction_changes` 计数（见 [`inference.md` § TRWDiagnostics](inference.md#trwdiagnostics)）的变量是冲突信号。 |
-| 写测试需要 ground truth | `from gaia.engine.bp import exact_inference` | 直接用 brute-force（n ≤ 20）；不走 `InferenceEngine.run`。 |
+| 写测试需要 ground truth | `"exact"` 或 `from gaia.engine.bp import exact_inference` | `InferenceEngine.run(method="exact")` 默认允许 n ≤ 26；直接调用 `exact_inference` 适合更小的 unit-test graphs。 |
 | 故意要 MF VI 测大图近似 | `"mean_field"` | 唯一合法的 MF VI 用法：你接受 30%~79% 误差，目标是看 belief 量级是否合理而非数值。 |
 
 ## 5. `infer()` 和 `InferenceEngine.run` 的差别

@@ -325,7 +325,7 @@ posterior(H_a) / posterior(H_b)
 
 within Cromwell clamp. The default `pairwise_contradiction` mode is weaker ("at most one true") and can leave residual mass on "none of the above"; it preserves pairwise odds among the listed alternatives but is not a strict normalized model-comparison posterior over only those alternatives. Authors who need posterior marginals to sum over an exhaustive H set should use `exclusivity="exhaustive_pairwise_complement"` when the H set is exhaustive.
 
-**⚠️ Default exclusivity caveat — illustrative numerical example.** Picking a moderate, illustrative pair of log-likelihoods (logL_a = −1.2, logL_b = −5.1, unclamped BF ≈ 49 — chosen so the BF stays within the Cromwell clamp window) and running them through the current `gaia.bp` engine yields:
+**⚠️ Default exclusivity caveat — illustrative numerical example.** Picking a moderate, illustrative pair of log-likelihoods (logL_a = −1.2, logL_b = −5.1, unclamped BF ≈ 49 — chosen so the BF stays within the Cromwell clamp window) and running them through the current `gaia.engine.bp` engine yields:
 
 | `exclusivity` mode | exact posterior(H_a) | exact posterior(H_b) | exact posterior odds | BF odds? |
 |---|---|---|---|---|

@@ -244,7 +244,7 @@ Pydantic model 的 JSON schema 派生，pre-push 钩子
 - `gaia/engine/ir/strategy.py` — `Strategy`, `StrategyType`（inline strategy probability fields）
 - `gaia/engine/lang/dsl/register_prior.py` — `register_prior()` 作者面 API、resolution 步骤、metadata schema 常量
 - `gaia/engine/lang/dsl/knowledge.py` — `claim(prior=X)` shortcut
-- `gaia/cli/_packages.py` — `apply_package_priors()` CLI 步骤
+- `gaia/engine/packaging.py` — `apply_package_priors()` package-loading step
 - `gaia/engine/lang/compiler/compile.py` — `compile_package_artifact()` 入口处的 idempotent resolution 兜底
 - `gaia/engine/inquiry/diagnostics.py` — `detect_prior_dissent()`, `detect_prior_overridden()`
 - `gaia/cli/commands/check.py` — `_append_covered_prior_details` 的多源输出格式

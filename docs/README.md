@@ -12,7 +12,7 @@ Start with [What is Gaia?](for-visitors/what-is-gaia.md).
 ### I want to use Gaia to author knowledge packages
 > You're a researcher or research agent using the Gaia CLI.
 
-Start with the [Quick Start](for-users/quick-start.md), then read the [Hole And Bridge Tutorial](for-users/hole-bridge-tutorial.md), [Language Reference](for-users/language-reference.md), and [CLI Commands](for-users/cli-commands.md).
+Start with the [Quick Start](for-users/quick-start.md), then read the [Hole And Bridge Tutorial](for-users/hole-bridge-tutorial.md), the [Language Reference](for-users/language-reference.md) DSL cheat sheet, and [CLI Commands](for-users/cli-commands.md).
 
 ### I want to develop Gaia
 > You're a developer working on the codebase.
@@ -47,4 +47,4 @@ The [Foundations](foundations/README.md) directory contains Gaia's conceptual re
 | `archive/` | Historical design docs, previous foundations versions, completed plans |
 | `design/` | Scaling belief propagation, engineering related work |
 | `ideas/` | Design ideas, academic related work survey |
-| `examples/` | Worked examples (Einstein elevator, Galileo tied-balls) |
+| `examples/` | Worked examples (Galileo falling bodies, Mendel inheritance) |

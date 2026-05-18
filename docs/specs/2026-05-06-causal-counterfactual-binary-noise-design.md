@@ -155,7 +155,7 @@ When the flag is off, lowering is exactly Mech §6.2 — analytic noisy-OR colla
 
 ```python
 from gaia.causal.intervene import Intervention, CausalQueryResult
-from gaia.bp.factor_graph import FactorGraph
+from gaia.engine.bp.factor_graph import FactorGraph
 
 @dataclass(frozen=True)
 class CounterfactualQueryResult(CausalQueryResult):

@@ -130,7 +130,7 @@ Gaia 基础文档应归入以下四个主要层次之一。
 
 - `system-overview.md`
 - `review/service-boundaries.md`
-- `server/architecture.md`
+- `ecosystem/02-decentralized-architecture.md`
 
 ### 规格
 
@@ -147,7 +147,7 @@ Gaia 基础文档应归入以下四个主要层次之一。
 
 - `language/gaia-language-spec.md`
 - `gaia-ir.md`
-- `server/storage-schema.md`
+- `cli/registration.md`
 - `cli/command-lifecycle.md`
 
 ## 5. 范围
@@ -163,7 +163,7 @@ Gaia 基础文档应归入以下四个主要层次之一。
 当 Gaia 增长时，这个维度通常承担扩展工作。例如：
 
 - `01-product-scope.md` 是 `Repo-wide`
-- `server/architecture.md` 是 `Subsystem`
+- `foundations/cli/workflow.md` 是 `Subsystem`
 - 未来的存储摄取设计文档可能是 `Component`
 
 ## 6. 状态标签

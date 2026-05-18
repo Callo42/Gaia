@@ -110,4 +110,4 @@ Global 推理的 FactorGraph 是持久化的——integrate 时写入存储，BP
 - `gaia/engine/bp/bp.py` -- `BeliefPropagation`（legacy loopy-BP 实现）
 - `gaia/engine/bp/lowering.py` -- `lower_local_graph()`、`merge_factor_graphs()`（从 local 或 global graph 构建 `FactorGraph`，联合跨包合并）
 - `gaia/cli/commands/infer.py` -- `gaia run infer` 命令（`--depth` 参数）
-- `gaia/cli/_packages.py` -- `load_dependency_compiled_graphs()`、`collect_foreign_node_priors()`
+- `gaia/engine/packaging.py` -- `load_dependency_compiled_graphs()`、`collect_foreign_node_priors()`

@@ -274,6 +274,11 @@ comparison = bayes.compare(
 )
 ```
 
+For the bare dict form, keys must cover exactly the model hypotheses being
+compared: no missing hypothesis keys and no extra keys. Values are
+log-likelihoods. The compiler converts runtime object references to QIDs in IR
+metadata; runtime objects do not expose stable `.id` or `.qid` fields.
+
 Wrappers should record at least a `seed` and a convergence statistic
 (`r_hat_max` / `ess_min` / `divergences` / `abs_error_estimate` / ...)
 in the `diagnostics` payload; `gaia build check` will warn on empty or
