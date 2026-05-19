@@ -4,7 +4,7 @@
 >
 > **Date:** 2026-05-16
 >
-> **Last updated:** 2026-05-16 (post-implementation amend per chenkun review on PR #620).
+> **Last updated:** 2026-05-19 (PyPI Trusted Publishing must run in the top-level release workflow, not inside a composite action).
 >
 > **Scope:** Release channels, CI validation layers, package-corpus e2e checks, and version naming for gaia-lang.
 >
@@ -111,7 +111,14 @@ It also bumps `pyproject.toml` (transiently) to `0.5.0.dev<YYYYMMDD>`, injects `
 
 ### Release CI
 
-Release CI is nightly CI plus publishing checks, factored into a composite action (`.github/actions/release/action.yml`) invoked by four manual caller workflows (`release-alpha.yml`, `release-beta.yml`, `release-rc.yml`, `release-stable.yml`). The composite enforces the six release invariants:
+Release CI is nightly CI plus publishing checks. Build + validation are
+factored into a composite action (`.github/actions/release/action.yml`) invoked
+by four manual caller workflows (`release-alpha.yml`, `release-beta.yml`,
+`release-rc.yml`, `release-stable.yml`). PyPI Trusted Publishing runs in the
+top-level caller workflow after the composite completes, because
+`pypa/gh-action-pypi-publish` does not support Trusted Publishing from inside a
+composite action. Together, the composite and caller workflow enforce the six
+release invariants:
 
 | Invariant | Enforcement |
 |---|---|
@@ -120,9 +127,12 @@ Release CI is nightly CI plus publishing checks, factored into a composite actio
 | Docs build | `uv run --extra docs mkdocs build --strict` runs as a release gate before publish. |
 | Package corpus e2e passes | `uv run python scripts/run_package_corpus.py` runs as a release gate before publish. |
 | Artifacts include source commit and channel metadata | `_build_info.py` injection writes `CHANNEL` + `COMMIT`; `gaia --version` exposes both (asserted). |
-| Publishing target matches the channel | Caller workflow drives `inputs.channel`; only `do_git_tag=true` (stable) triggers `git tag` + `gh release create`. All four callers use the same OIDC trusted-publishing target on PyPI. |
+| Publishing target matches the channel | Caller workflow drives `inputs.channel`; all four callers use the same top-level OIDC trusted-publishing target on PyPI. Only `release-stable.yml` creates `git tag` + `gh release create`, and only after PyPI publish succeeds. |
 
-The composite also runs `make test-all` as a release gate alongside docs build and corpus runner. Gates run in both dry-run and non-dry-run modes — dry-run skips publish/tag/release, but the validation gates are themselves the pipeline being verified, so they always run.
+The composite also runs `make test-all` as a release gate alongside docs build
+and corpus runner. Gates run in both dry-run and non-dry-run modes — dry-run
+skips publish/tag/release, but the validation gates are themselves the pipeline
+being verified, so they always run.
 
 ## 5. Package Corpus E2E
 
@@ -220,7 +230,7 @@ PR #620 (merged 2026-05-16) landed the implementation; this section records what
 
 4. `gaia --version` reports `channel`, `commit`, and `ir_schema` (the `ir-vN+<12-hex>` form, see §6).
 
-5. Four manual caller workflows (`release-alpha.yml`, `release-beta.yml`, `release-rc.yml`, `release-stable.yml`) all invoke `.github/actions/release/action.yml` (composite). The composite enforces version assertion (sed + grep-q), `_build_info.py` injection, `gaia --version` channel + version asserts, `uv build`, wheel-smoke, `make test-all`, docs strict build, package corpus e2e, then conditional PyPI publish / git tag / GH release.
+5. Four manual caller workflows (`release-alpha.yml`, `release-beta.yml`, `release-rc.yml`, `release-stable.yml`) all invoke `.github/actions/release/action.yml` (composite). The composite enforces version assertion (sed + grep-q), `_build_info.py` injection, `gaia --version` channel + version asserts, `uv build`, wheel-smoke, `make test-all`, docs strict build, and package corpus e2e. The caller workflow then conditionally performs top-level PyPI publish; the stable caller additionally creates the git tag and GitHub Release after publish succeeds.
 
 ## 9. Open Questions (resolved at implementation time)
 
