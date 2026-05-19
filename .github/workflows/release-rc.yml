@@ -20,8 +20,7 @@ on:
 
 permissions:
   # `contents: write` kept for uniformity with stable (unused on rc).
-  # `id-token: write` is required for OIDC trusted publishing to PyPI via
-  # pypa/gh-action-pypi-publish inside the composite action.
+  # `id-token: write` is required for PyPI Trusted Publishing.
   contents: write
   id-token: write
 
@@ -57,5 +56,7 @@ jobs:
           channel: "rc"
           commit: ${{ github.sha }}
           dry_run: ${{ inputs.dry_run }}
-          do_git_tag: "false"
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to PyPI (OIDC trusted publishing)
+        if: ${{ inputs.dry_run == false }}
+        uses: pypa/gh-action-pypi-publish@release/v1
