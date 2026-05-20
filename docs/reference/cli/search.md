@@ -3,16 +3,24 @@
 Search retrieval providers for Gaia authoring.
 
 ```text
-gaia search lkm claims <query>              Search LKM claim / question nodes
-gaia search lkm reasoning <claim-id>        Fetch reasoning chains for one claim
-gaia search lkm reasoning-search <query>    Search LKM reasoning chains
-gaia search lkm variables <ids...>          Hydrate LKM variables by id
-gaia search lkm paper-graph [identifier]    Fetch one paper's LKM graph
+gaia search lkm knowledge <query>           Search LKM claim/question nodes
+gaia search lkm reasoning <query>           Search LKM reasoning chains
+gaia search lkm reasoning --claim-id <id>   Fetch reasoning chains for one claim
+gaia search lkm nodes <ids...>              Fetch LKM graph nodes by id
+gaia search lkm package [identifier]        Fetch one LKM paper package candidate
 gaia search lkm auth ...                    Manage the LKM access key
 ```
 
-The current implementation is an LKM provider adapter. It returns the upstream
-LKM JSON envelope and writes pretty JSON to stdout or to `--out PATH`.
+The current implementation is an LKM provider adapter. Search-oriented LKM
+verbs return Gaia-normalized JSON by default and write pretty JSON to stdout or
+to `--out PATH`.
+
+Use `--format raw-json` on `knowledge`, `reasoning`, or `package` to
+inspect the upstream LKM JSON envelope directly.
+
+Hidden compatibility aliases remain available for older PR builds:
+`claims` for `knowledge`, `reasoning-search` for query-mode `reasoning`,
+`variables` for `nodes`, and `paper-graph` for `package`.
 
 ## Design Contract
 
@@ -29,6 +37,11 @@ follow-up commands, but package installation and dependency changes belong to
 
 LKM retrieval scores are ranking signals only. They must not be copied into
 Gaia priors, beliefs, or warrant strengths.
+
+`reasoning` returns reasoning-chain search results. A result is a complete
+candidate Gaia `derive(...)` only when the payload includes a factor with both
+`premises` and `conclusion`; otherwise inspect the claim reasoning by
+`--claim-id` or fetch the paper package candidate.
 
 The planned normalized result schema and the `search` / `pkg add` boundary are
 tracked in the internal draft `docs/specs/2026-05-20-gaia-search-design.md`.

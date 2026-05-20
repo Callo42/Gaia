@@ -1,8 +1,9 @@
-"""``gaia search lkm reasoning-search`` — POST /reasoning/search.
+"""Hidden ``gaia search lkm reasoning-search`` compatibility alias.
 
-Recall at the *reasoning-chain* granularity (vs single-node recall in
-``claims``). The body uses the plural ``filters.paper_ids`` array per the
-apifox spec.
+The user-facing command is ``gaia search lkm reasoning <query>``. This module
+keeps the older endpoint-shaped command available for PR/build compatibility.
+It still calls ``POST /reasoning/search`` with the plural
+``filters.paper_ids`` array per the apifox spec.
 """
 
 from __future__ import annotations
@@ -12,6 +13,10 @@ from typing import Annotated, Any
 
 import typer
 
+from gaia.cli.commands.search._results import (
+    SearchOutputFormat,
+    normalize_lkm_reasoning_search,
+)
 from gaia.cli.commands.search.lkm._shared import (
     MAX_KEYWORDS,
     MAX_LIMIT,
@@ -20,7 +25,7 @@ from gaia.cli.commands.search.lkm._shared import (
     emit,
     run_request,
 )
-from gaia.cli.commands.search.lkm.claims import RetrievalMode
+from gaia.cli.commands.search.lkm.knowledge import RetrievalMode
 
 
 def reasoning_search_command(
@@ -58,6 +63,14 @@ def reasoning_search_command(
         Path | None,
         typer.Option("--out", help="Write JSON to PATH (atomic) instead of stdout."),
     ] = None,
+    output_format: Annotated[
+        SearchOutputFormat,
+        typer.Option(
+            "--format",
+            help="Output format: raw upstream JSON or normalized Gaia search JSON.",
+            case_sensitive=False,
+        ),
+    ] = SearchOutputFormat.GAIA_JSON,
 ) -> None:
     """Search reasoning chains (POST /reasoning/search)."""
     if keywords and len(keywords) > MAX_KEYWORDS:
@@ -106,4 +119,6 @@ def reasoning_search_command(
         body["filters"] = {"paper_ids": list(paper_ids)}
 
     payload = run_request("POST", "/reasoning/search", json_body=body)
+    if output_format == SearchOutputFormat.GAIA_JSON:
+        payload = normalize_lkm_reasoning_search(payload, query=query)
     emit(payload, out)

@@ -42,29 +42,35 @@ local providers.
 ### Phase 0: Current PR
 
 ```text
-gaia search lkm claims ...
+gaia search lkm knowledge ...
 gaia search lkm reasoning ...
-gaia search lkm reasoning-search ...
-gaia search lkm variables ...
-gaia search lkm paper-graph ...
+gaia search lkm nodes ...
+gaia search lkm package ...
 gaia search lkm auth ...
 ```
 
-This phase is intentionally a raw provider adapter. It should preserve the LKM
-API response under `raw` or in the legacy top-level output so existing agent
-workflows can debug the upstream service directly.
+This phase is a provider adapter with Gaia-native output by default. It should
+preserve the LKM API response under `raw`, and keep `--format raw-json`
+available so agent workflows can debug the upstream service directly.
+Older LKM endpoint-shaped names (`reasoning-search`, `variables`,
+`paper-graph`) may remain as hidden compatibility aliases, but user-facing
+commands should use Gaia-facing object names.
 
 ### Phase 1: Gaia-native output mode
 
-Add a normalized output option to provider commands:
+Provider commands should return normalized Gaia output by default:
 
 ```text
-gaia search lkm claims "FAPbI3" --format gaia-json
-gaia search lkm paper-graph --paper-id 811827932371615744 --format gaia-json
+gaia search lkm knowledge "FAPbI3"
+gaia search lkm reasoning "thermal stability"
+gaia search lkm reasoning --claim-id gcn_579430355a0e4bbd
+gaia search lkm package --paper-id 811827932371615744
 ```
 
-`--format raw-json` remains available for direct LKM API inspection. The
-default may remain raw during alpha releases to avoid breaking PR 683 users.
+`--format raw-json` remains available for direct LKM API inspection.
+For `knowledge`, the current Apifox-backed LKM `/search` response surface is
+claim/question nodes only; Gaia should not expose reserved or stale
+action/setting scopes from older drafts.
 
 ### Phase 2: Local provider
 
@@ -96,7 +102,7 @@ Every Gaia-native search command should return:
   "query": {
     "text": "FAPbI3",
     "provider": "lkm",
-    "kind": "claim"
+    "kind": "knowledge"
   },
   "results": [
     {
@@ -121,12 +127,13 @@ Every Gaia-native search command should return:
         "provider_id": "gcn_579430355a0e4bbd",
         "source_package": "paper:811827932371615744",
         "paper_id": "811827932371615744",
-        "doi": "10.1016/j.jpcs.2021.110374"
+        "doi": "10.1016/j.jpcs.2021.110374",
+        "role": "conclusion"
       },
       "actions": [
         {
           "kind": "inspect",
-          "command": "gaia search lkm reasoning gcn_579430355a0e4bbd"
+          "command": "gaia search lkm reasoning --claim-id gcn_579430355a0e4bbd"
         },
         {
           "kind": "add",
@@ -149,7 +156,7 @@ Field rules:
 |---|---|
 | `id` | Stable search-result id in the provider namespace |
 | `provider` | `lkm`, `pkg`, or another future provider |
-| `kind` | Gaia-facing kind: `package`, `claim`, `question`, `note`, `strategy`, `paper`, `relation` |
+| `kind` | Gaia-facing kind: `package`, `claim`, `question`, `note`, `derive`, `relation` |
 | `rank.score` | Retrieval ranking only, never a prior |
 | `gaia` | Populated when the result already has a Gaia package identity |
 | `source` | Provider provenance needed for citations and follow-up calls |
@@ -218,12 +225,17 @@ normalized boundary:
 |---|---|---|
 | `variable.type == "claim"` | `claim` | Candidate Gaia `claim(...)` |
 | `variable.type == "question"` | `question` | Candidate Gaia `question(...)` |
-| `variable.type == "setting"` | `note` | Gaia `setting()` is deprecated; normalize to non-probabilistic context |
-| `variable.type == "action"` | `strategy` or `paper` context | Do not map to a Gaia action unless the DSL action semantics are known |
-| `factor` / reasoning chain | `strategy` | Candidate `derive`, `infer`, `deduction`, or `depends_on`; mapping requires inspection |
-| `paper.package_id` | `paper` / `package` candidate | Addable only after materialization or registry resolution |
+| reasoning chain hit | `reasoning_chain` | Search result for LKM reasoning chains; may or may not include full factors |
+| complete `factor` with `premises` + `conclusion` | `reasoning_chain` with `gaia.object_kind == "derive"` | Candidate Gaia `derive(...)`; preserve raw factors for inspection |
+| `paper.package_id` | `package` candidate | Addable only after materialization or registry resolution |
 
-LKM `paper-graph` output should preserve `paper`, `variables`, `factors`, and
+The public `/search` endpoint should be treated as claim/question retrieval.
+Reasoning factors are exposed through `reasoning` and `package`, not as public
+search-result variables. A `reasoning` result is not a complete Gaia
+`derive(...)` unless it includes a factor with both `premises` and
+`conclusion`.
+
+LKM `package` output should preserve `paper`, `variables`, `factors`, and
 `motivations` metadata, but Gaia-native output should also expose:
 
 - `source.source_package`, e.g. `paper:811827932371615744`
@@ -298,7 +310,7 @@ from these artifacts and invalidated by `ir_hash`.
 
 ### Phase 0: PR 683
 
-- Keep `gaia search lkm` as a raw provider adapter.
+- Keep `gaia search lkm` as the initial provider adapter.
 - Keep `LKM_ACCESS_KEY` compatibility and clean error handling.
 - Document that scores are retrieval scores only.
 
@@ -306,7 +318,8 @@ from these artifacts and invalidated by `ir_hash`.
 
 - Add `gaia.cli.commands.search._results` with typed result builders.
 - Add `--format raw-json|gaia-json` to LKM verbs.
-- Normalize `claims`, `reasoning-search`, and `paper-graph` first.
+- Make `gaia-json` the default output for search-oriented LKM verbs.
+- Normalize `knowledge`, `reasoning`, and `package` first.
 - Preserve raw payloads during alpha.
 
 ### Phase 2: Local package provider
@@ -337,5 +350,5 @@ from these artifacts and invalidated by `ir_hash`.
 - Search does not formalize `equal` or `contradict` relations from textual
   similarity alone.
 - Search does not import arbitrary installed packages during discovery.
-- `paper-graph` does not imply that the graph is already a checked Gaia
+- `package` does not imply that the graph is already a checked Gaia
   package.

@@ -1,6 +1,6 @@
-"""``gaia search lkm claims`` — POST /search.
+"""``gaia search lkm knowledge`` — POST /search.
 
-Cross-node retrieval over claim / question / setting / action nodes. The
+Cross-node retrieval over claim / question nodes. The
 returned ``score`` is a retrieval ranking signal, not a probability — see
 the verb help epilog.
 """
@@ -13,6 +13,7 @@ from typing import Annotated, Any
 
 import typer
 
+from gaia.cli.commands.search._results import SearchOutputFormat, normalize_lkm_knowledge
 from gaia.cli.commands.search.lkm._shared import (
     MAX_KEYWORDS,
     MAX_LIMIT,
@@ -27,8 +28,6 @@ class ScopeChoice(StrEnum):
 
     CLAIM = "claim"
     QUESTION = "question"
-    SETTING = "setting"
-    ACTION = "action"
 
 
 class RetrievalMode(StrEnum):
@@ -39,7 +38,7 @@ class RetrievalMode(StrEnum):
     HYBRID = "hybrid"
 
 
-_CLAIMS_EPILOG = (
+_KNOWLEDGE_EPILOG = (
     "Retrieval modes:\n\n"
     "  semantic  meaning-similarity recall (different wording, same idea)\n"
     "  lexical   keyword literal recall (must contain a specific term)\n"
@@ -50,13 +49,13 @@ _CLAIMS_EPILOG = (
 )
 
 
-def claims_command(
+def knowledge_command(
     query: Annotated[str, typer.Argument(help="Natural-language search query.")],
     scopes: Annotated[
         list[ScopeChoice] | None,
         typer.Option(
             "--scopes",
-            help="Restrict recall to these node types (repeatable). Empty = all four.",
+            help="Restrict recall to claim/question nodes (repeatable). Empty = both.",
             case_sensitive=False,
         ),
     ] = None,
@@ -98,8 +97,16 @@ def claims_command(
         Path | None,
         typer.Option("--out", help="Write JSON to PATH (atomic) instead of stdout."),
     ] = None,
+    output_format: Annotated[
+        SearchOutputFormat,
+        typer.Option(
+            "--format",
+            help="Output format: raw upstream JSON or normalized Gaia search JSON.",
+            case_sensitive=False,
+        ),
+    ] = SearchOutputFormat.GAIA_JSON,
 ) -> None:
-    """Search claim / question nodes (POST /search)."""
+    """Search LKM knowledge nodes (POST /search)."""
     if keywords and len(keywords) > MAX_KEYWORDS:
         typer.echo(
             f"Error: at most {MAX_KEYWORDS} --keywords allowed; got {len(keywords)}.",
@@ -115,6 +122,13 @@ def claims_command(
     if limit < 1 or limit > MAX_LIMIT:
         typer.echo(
             f"Error: --limit must be between 1 and {MAX_LIMIT}; got {limit}.",
+            err=True,
+        )
+        raise typer.Exit(4)
+    if reasoning_only and scopes and scopes != [ScopeChoice.CLAIM]:
+        typer.echo(
+            "Error: --reasoning-only requires --scopes to be omitted or exactly "
+            "`claim`; question nodes do not have reasoning chains.",
             err=True,
         )
         raise typer.Exit(4)
@@ -137,4 +151,19 @@ def claims_command(
     body["filters"] = filters
 
     payload = run_request("POST", "/search", json_body=body)
+    if output_format == SearchOutputFormat.GAIA_JSON:
+        payload = normalize_lkm_knowledge(payload, query=query, kind=_query_kind(scopes))
     emit(payload, out)
+
+
+def _query_kind(scopes: list[ScopeChoice] | None) -> str:
+    """Return the Gaia query kind represented by the requested LKM scopes."""
+    if scopes is None or len(scopes) != 1:
+        return "knowledge"
+    return {
+        ScopeChoice.CLAIM: "claim",
+        ScopeChoice.QUESTION: "question",
+    }[scopes[0]]
+
+
+claims_command = knowledge_command
