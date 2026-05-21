@@ -344,6 +344,7 @@ def context_to_json_dict(packet: ContextPacket) -> dict[str, Any]:
                 "conclusion": step.conclusion_id,
                 "premises": list(step.premise_ids),
                 "background": list(step.background_ids),
+                "rationale": step.rationale,
             }
             for step in _ordered_steps(packet)
         ],

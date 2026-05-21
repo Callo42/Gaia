@@ -141,6 +141,11 @@ def test_context_json_is_envelope_with_ir_slice(tmp_path):
     assert data["why_route"]
     assert data["why_route"][0]["edge_kind"] == "strategy"
     assert data["why_route"][0]["label"] == "acceleration_route"
+    assert (
+        data["why_route"][0]["rationale"]
+        == "The refutation of proportional-speed scaling and pendulum regularity "
+        "motivate a different inquiry target."
+    )
     assert "ir" in data
     expected_ir_keys = {
         "namespace",

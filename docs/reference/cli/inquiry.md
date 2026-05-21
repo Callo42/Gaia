@@ -52,6 +52,11 @@ gaia inquiry context . --focus acceleration_inquiry --json
 The command is read-only: it does not save inquiry state, append tactic events,
 run inference, or display beliefs.
 
+`--trajectory most_uncertain` and `--trajectory shortest` select from the
+currently enumerable backward support routes for the focus claim. Very large
+packages with many parallel routes may need route caps or beam-style selection
+in a future release.
+
 ## Implementation
 
 ::: gaia.cli.commands.inquiry
