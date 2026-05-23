@@ -31,12 +31,17 @@ as residual ordering hazards in the PR body.
 
 from __future__ import annotations
 
+import contextlib
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 import typer
 
+from gaia.cli.commands.author._authored import (
+    AUTHORED_PACKAGE,
+    ensure_authored_submodule,
+)
 from gaia.cli.commands.author._envelope import (
     EXIT_OK,
     EXIT_PREWRITE_STRUCTURAL,
@@ -128,6 +133,7 @@ def _execute_writes(
     pre_source_init: Path,
     write_target: Path,
     pre_import_name: str | None,
+    cross_module_imports: tuple[tuple[str, str], ...] = (),
 ) -> _WriteOutcome:
     """Run the prepended + main writes. Raises OSError/PermissionError on IO fail.
 
@@ -137,6 +143,13 @@ def _execute_writes(
     passed, the auto-mint claim lands next to its consumer in the
     sibling instead of leaving the sibling with an unresolved reference
     and ``__init__.py`` with an orphan binding.
+
+    ``cross_module_imports`` carries ``(symbol, "")`` pairs for any
+    reference that resolves to a hand-authored package-root binding —
+    the writer inserts ``from <import_name> import <symbol>`` so the
+    statement (now living in ``authored/``) resolves the root binding at
+    engine-load time. They are merged with the verb's own
+    ``sibling_imports``.
     """
     del pre_source_init  # retained as a kwarg for API symmetry / future use
     written_segments: list[str] = []
@@ -158,11 +171,12 @@ def _execute_writes(
         written_segments.append(prep_write.appended)
         if prep_write.all_warning:
             all_warning_messages.append(prep_write.all_warning)
+    merged_sibling_imports = (*proposed_op.sibling_imports, *cross_module_imports)
     write_result = append_statement(
         write_target,
         proposed_op.generated_code,
         new_label=proposed_op.label,
-        sibling_imports=proposed_op.sibling_imports,
+        sibling_imports=merged_sibling_imports,
         import_package_name=pre_import_name,
         required_imports=proposed_op.required_imports,
         export=proposed_op.export,
@@ -296,7 +310,39 @@ def run_author_op(
             )
             return
 
+    # ---- materialize the authored/ submodule + root re-export ---------- #
+    #
+    # Prewrite is read-only (FIX: a rejected command must not mutate the
+    # package), so the submodule + the root ``from .authored import *``
+    # re-export are created here — after the snapshot above captured
+    # ``{source_init_path, write_target}`` in their PRE-materialization
+    # shape, and only now that prewrite passed and any warning prompt was
+    # accepted. Doing it after the snapshot means a postwrite-failure
+    # rollback restores the root __init__.py to its pre-re-export content
+    # and unlinks a freshly-created authored/__init__.py.
+    assert pre.source_root is not None  # invariant after a successful prewrite
+    try:
+        ensure_authored_submodule(pre.source_root, pre.source_init_path)
+    except (OSError, PermissionError) as exc:
+        emit(
+            system_error(
+                proposed_op.verb,
+                f"failed to create authored/ submodule under {pre.source_root}: {exc}",
+                kind="prewrite.target_invalid",
+            ),
+            human=human,
+        )
+        return
+
     # ---- step 3: write -------------------------------------------------- #
+
+    # Cross-module imports: references that resolve to a hand-authored
+    # package-root binding (not present in authored/) need an explicit
+    # ``from <import_name> import <symbol>`` so the statement — now living
+    # in the authored/ submodule — resolves them at engine-load time.
+    cross_module_imports = tuple(
+        (ref, "") for ref in dict.fromkeys(proposed_op.references) if ref in pre.root_only_symbols
+    )
 
     try:
         outcome = _execute_writes(
@@ -304,6 +350,7 @@ def run_author_op(
             pre_source_init=pre.source_init_path,
             write_target=write_target,
             pre_import_name=pre.import_name,
+            cross_module_imports=cross_module_imports,
         )
     except (OSError, PermissionError) as exc:
         emit(
@@ -399,6 +446,14 @@ def _rollback_snapshot(snapshot: dict[Path, str | None]) -> list[Diagnostic]:
                 # File did not exist before write — remove it.
                 if path.exists():
                     path.unlink()
+                # If this was a freshly-created authored/__init__.py, the
+                # now-empty authored/ dir would linger after rollback —
+                # prune it. Narrow: only a dir literally named ``authored``
+                # and only when empty; best-effort (ignore OSError).
+                parent = path.parent
+                if parent.name == AUTHORED_PACKAGE and parent.is_dir():
+                    with contextlib.suppress(OSError):
+                        parent.rmdir()
             else:
                 path.write_text(previous)
             restored.append(str(path))

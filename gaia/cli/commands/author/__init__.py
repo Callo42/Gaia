@@ -1,4 +1,4 @@
-"""``gaia author`` subcommand group — agent-first authoring CLI.
+"""``gaia author`` subcommand group — optional authoring convenience.
 
 This module exposes the ``gaia author <verb>`` namespace, where ``<verb>``
 matches one of the DSL surface verbs (``claim`` / ``artifact`` /
@@ -6,14 +6,16 @@ matches one of the DSL surface verbs (``claim`` / ``artifact`` /
 ``contradict`` / ``exclusive`` / ``decompose`` / ``observe`` /
 ``compute`` / ``infer`` / ``associate`` / ``parameter`` /
 ``register_prior`` / ``depends_on`` / ``candidate_relation`` /
-``materialize`` / ``variable`` / ``compose`` / ``composition``). The CLI
-is the primary consumer surface for an LLM
-agent doing end-to-end authoring on a Gaia knowledge package: it owns
-identifier collision checks, reference resolution, pre-write defensive
-validation, file appending, and (by default) a post-write
-``gaia build check`` to make sure the package still compiles. Output is
-JSON-by-default through a uniform envelope (see :mod:`._envelope`);
-``--human`` opts into a human-readable rendering of the same payload.
+``materialize`` / ``variable`` / ``compose`` / ``composition``). Direct
+SDK authoring (``gaia sdk`` + writing the DSL in Python) is the primary
+path; this CLI is an OPTIONAL convenience for humans and agents alike.
+When used, it owns identifier collision checks, reference resolution,
+pre-write defensive validation, file appending into the package's
+re-exported ``authored/`` submodule (never the package-root
+``__init__.py``), and (by default) a post-write ``gaia build check`` to
+make sure the package still compiles. Output is JSON-by-default through a
+uniform envelope (see :mod:`._envelope`); ``--human`` opts into a
+human-readable rendering of the same payload.
 
 The author surface ships 22 verbs end-to-end against a uniform pre-write
 envelope skeleton: 20 statement-emitting verbs (``claim`` /

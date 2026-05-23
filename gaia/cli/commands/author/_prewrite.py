@@ -58,9 +58,10 @@ from __future__ import annotations
 
 import ast
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
+from gaia.cli.commands.author._authored import authored_init
 from gaia.cli.commands.author._deprecation_scan import get_deprecated_names
 from gaia.cli.commands.author._envelope import Diagnostic, exit_code_for_diagnostic
 from gaia.cli.commands.author._proposed_op import ProposedAuthorOp
@@ -125,11 +126,16 @@ class AuthorPrewriteResult:
     diagnostics: list[Diagnostic]
     warnings: list[Diagnostic]
     # Multi-file target: the absolute path the writer should append to.
-    # Defaults to ``source_init_path`` when the verb did not request a
+    # Defaults to ``authored/__init__.py`` when the verb did not request a
     # different file via ``ProposedAuthorOp.target_file``; otherwise
-    # points at ``src/<import_name>/<relative>``.
+    # points at ``authored/<relative>``.
     write_target_path: Path | None = None
     source_root: Path | None = None
+    # Names bound in the package-root source (hand-authored DSL) but NOT
+    # in the ``authored/`` submodule. A CLI statement that references one
+    # of these needs a ``from <import_name> import <name>`` line so the
+    # reference resolves at engine-load time from inside ``authored/``.
+    root_only_symbols: frozenset[str] = field(default_factory=frozenset)
 
 
 def prewrite_check(
@@ -366,6 +372,14 @@ def prewrite_check(
     )
     warnings.extend(_detect_deprecated_refs(proposed_op))
 
+    # Root-only symbols: bindings in the package-root source (hand-authored
+    # DSL) that are not also in the ``authored/`` submodule. A CLI statement
+    # written into ``authored/`` that references one of these needs a
+    # ``from <import_name> import <name>`` line to resolve at load time.
+    root_symbols = _collect_root_symbols(source_root)
+    authored_symbols = _collect_module_symbols(authored_init(source_root).parent, import_name)
+    root_only = frozenset(root_symbols - authored_symbols)
+
     return AuthorPrewriteResult(
         ok=True,
         target_path=target_root,
@@ -378,6 +392,7 @@ def prewrite_check(
         warnings=warnings,
         write_target_path=write_target_path,
         source_root=source_root,
+        root_only_symbols=root_only,
     )
 
 
@@ -475,19 +490,39 @@ def _resolve_target_file_or_default(
     source_root: Path,
     source_init_path: Path | None,
 ) -> tuple[list[Diagnostic], Path | None]:
-    """Resolve ``proposed_op.target_file`` against source root + role policy.
+    """Resolve ``proposed_op.target_file`` against the ``authored/`` submodule.
 
     Lifted out of :func:`prewrite_check` to keep its complexity below
     the ruff C901 budget. Returns ``(errors, write_target_path)``;
     errors is non-empty when the file path is invalid or the role
-    policy refuses the verb. When ``target_file`` is unset, the path
-    defaults to ``source_init_path`` and no errors are returned.
+    policy refuses the verb.
+
+    Canon: every CLI-authored statement lands inside the package's
+    re-exported ``authored/`` submodule — never the package-root
+    ``__init__.py``. When ``target_file`` is unset, the path defaults to
+    ``authored/__init__.py``; when ``--file <relative>`` is supplied, it
+    routes to ``authored/<relative>``.
+
+    This function is **read-only**: it computes the ``authored/`` path
+    purely (no disk write). Materialization of the submodule + the root
+    ``from .authored import *`` re-export is deferred to the WRITER (the
+    runner, after the snapshot), so a rejected ``gaia author`` command —
+    a collision, unresolved reference, role-forbidden file, etc. — leaves
+    the user's package untouched.
     """
+    # Compute the authored/ paths purely; do NOT create them here. The
+    # runner materializes the submodule + root re-export after the snapshot
+    # and only on a successful prewrite. ``source_init_path`` is the
+    # package-root __init__.py.
+    assert source_init_path is not None  # invariant after target-structure validation
+    authored_init_path = authored_init(source_root)
+    authored_root = authored_init_path.parent
+
     if not proposed_op.target_file:
-        return [], source_init_path
+        return [], authored_init_path
     relative = proposed_op.target_file
     write_target_path, target_file_errors = _resolve_write_target(
-        source_root=source_root,
+        source_root=authored_root,
         relative=relative,
     )
     if target_file_errors:
@@ -777,7 +812,16 @@ def _collect_module_symbols(source_root: Path, import_name: str | None) -> set[s
     symbols: set[str] = set()
     if not source_root.exists() or not source_root.is_dir():
         return symbols
-    for py_path in sorted(source_root.glob("*.py")):
+    # Scan the package-root ``.py`` files (hand-authored DSL) plus the
+    # ``authored/`` submodule (CLI-authored DSL). A CLI statement may
+    # reference a hand-authored binding (in the root) and vice-versa;
+    # both compose into one package via the ``from .authored import *``
+    # re-export, so collision + reference resolution must see both.
+    scan_paths = sorted(source_root.glob("*.py"))
+    authored_subdir = authored_init(source_root).parent
+    if authored_subdir.exists() and authored_subdir.is_dir():
+        scan_paths.extend(sorted(authored_subdir.glob("*.py")))
+    for py_path in scan_paths:
         try:
             tree = ast.parse(py_path.read_text())
         except (OSError, SyntaxError):
@@ -794,8 +838,40 @@ def _collect_module_symbols(source_root: Path, import_name: str | None) -> set[s
     return symbols
 
 
-def _top_level_bindings(tree: ast.Module) -> set[str]:
-    """Return module-level names bound by assignments / imports / defs."""
+def _collect_root_symbols(source_root: Path) -> set[str]:
+    """Collect top-level DSL binding names from package-root ``.py`` files only.
+
+    Excludes the ``authored/`` submodule. Used to decide whether a
+    CLI-authored statement in ``authored/`` needs a cross-module
+    ``from <import_name> import <name>`` re-import for one of its
+    references.
+
+    Counts **DSL bindings only** (assignment / def / class names) and
+    deliberately excludes ``import`` / ``from ... import`` names: an
+    imported root name (e.g. a ``register_prior`` pulled from the engine)
+    does not need a cross-module re-import through the user package — the
+    writer's ``required_imports`` already handles engine names — and
+    re-importing it would be spurious.
+    """
+    symbols: set[str] = set()
+    if not source_root.exists() or not source_root.is_dir():
+        return symbols
+    for py_path in sorted(source_root.glob("*.py")):
+        try:
+            tree = ast.parse(py_path.read_text())
+        except (OSError, SyntaxError):
+            continue
+        symbols.update(_top_level_bindings(tree, include_imports=False))
+    return symbols
+
+
+def _top_level_bindings(tree: ast.Module, *, include_imports: bool = True) -> set[str]:
+    """Return module-level names bound by assignments / defs / (optionally) imports.
+
+    When ``include_imports`` is False, names bound by ``import`` /
+    ``from ... import`` are excluded — only assignment/def/class (DSL)
+    bindings are returned.
+    """
     names: set[str] = set()
     for node in tree.body:
         if isinstance(node, ast.Assign):
@@ -805,14 +881,21 @@ def _top_level_bindings(tree: ast.Module) -> set[str]:
             names.add(node.target.id)
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             names.add(node.name)
-        elif isinstance(node, ast.Import):
-            for alias in node.names:
-                names.add(alias.asname or alias.name.split(".", 1)[0])
-        elif isinstance(node, ast.ImportFrom):
-            for alias in node.names:
-                if alias.name == "*":
-                    continue
-                names.add(alias.asname or alias.name)
+        elif isinstance(node, (ast.Import, ast.ImportFrom)) and include_imports:
+            names.update(_import_bindings(node))
+    return names
+
+
+def _import_bindings(node: ast.Import | ast.ImportFrom) -> set[str]:
+    """Return the names an ``import`` / ``from ... import`` node binds."""
+    names: set[str] = set()
+    for alias in node.names:
+        if alias.name == "*":
+            continue
+        if isinstance(node, ast.Import):
+            names.add(alias.asname or alias.name.split(".", 1)[0])
+        else:
+            names.add(alias.asname or alias.name)
     return names
 
 
