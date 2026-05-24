@@ -489,6 +489,61 @@ def test_to_dot_stellaris_knowledge_palette():
     assert "#6d6d80" in setting_line
 
 
+def test_to_dot_knowledge_content_fallback_when_unnamed():
+    """A claim with empty title+label falls back to its (truncated) content."""
+    graph_json = json.dumps(
+        {
+            "nodes": [
+                {
+                    "id": "p:m::_anon_001",
+                    "type": "claim",
+                    "label": "",
+                    "title": None,
+                    "module": "m",
+                    "content": "derive warrants The muon g-2 anomaly provides a sensitive test "
+                    "of the Standard Model and beyond",
+                    "belief": 0.5,
+                }
+            ],
+            "edges": [],
+        }
+    )
+    for theme in ("stellaris", "light"):
+        dot = to_dot(graph_json, theme=theme)
+        line = _node_line(dot, "p:m::_anon_001")
+        m = re.search(r'label="([^"]*)"', line)
+        assert m, line
+        label = m.group(1)
+        # "derive warrants " prefix stripped; substantive text shown.
+        assert label.startswith("The muon g-2 anomaly"), f"{theme}: {label!r}"
+        assert "derive warrants" not in label, f"{theme}: {label!r}"
+        # Truncated with an ellipsis (content is longer than the cap), then the
+        # belief annotation trails it.
+        assert "…" in label, f"{theme}: {label!r}"
+        assert label.endswith("(0.50)"), f"{theme}: {label!r}"
+
+
+def test_to_dot_knowledge_title_wins_over_content():
+    """When a title is present it is used; content is only a last-resort fallback."""
+    graph_json = json.dumps(
+        {
+            "nodes": [
+                {
+                    "id": "p:m::named",
+                    "type": "claim",
+                    "label": "named",
+                    "title": "A Named Claim",
+                    "module": "m",
+                    "content": "derive warrants some other text",
+                }
+            ],
+            "edges": [],
+        }
+    )
+    line = _node_line(to_dot(graph_json, theme="stellaris"), "p:m::named")
+    assert 'label="A Named Claim"' in line
+
+
 def test_to_dot_question_knowledge_branch_stellaris():
     """Question knowledge nodes render with a dashed amber box (open inquiry)."""
     dot = to_dot(_make_stellaris_fixture(), theme="stellaris")
@@ -964,14 +1019,27 @@ def test_starmap_svg_graphviz_missing_error_message(tmp_path, monkeypatch):
     assert "sfdp" in result.output or "dot" in result.output
 
 
-def test_to_dot_stellaris_strategy_labels_stripped():
-    """In stellaris, strategy nodes are shape-only — no inline type text."""
+def test_to_dot_stellaris_strategy_labels_carry_glyph():
+    """In stellaris, strategy nodes are glyph-coded (∴ deduction / ⊕ support)."""
     dot = to_dot(_make_stellaris_fixture(), theme="stellaris")
-    # The fixture has both deduction and support strategies.
-    for nid in ("strat_ded", "strat_sup"):
+    expectations = {"strat_ded": "∴", "strat_sup": "⊕"}
+    for nid, glyph in expectations.items():
         line = _node_line(dot, nid)
         m = re.search(r'label="([^"]*)"', line)
-        assert m and m.group(1) == "", f"{nid} expected empty label, got line: {line}"
+        assert m and m.group(1) == glyph, f"{nid} expected {glyph!r}, got line: {line}"
+
+
+def test_to_dot_stellaris_unknown_strategy_falls_back_to_type_text():
+    """A strategy with an unmapped type renders its type text, not a blank label."""
+    graph_json = json.dumps(
+        {
+            "nodes": [{"id": "strat_x", "type": "strategy", "strategy_type": "mystery"}],
+            "edges": [],
+        }
+    )
+    dot = to_dot(graph_json, theme="stellaris")
+    line = _node_line(dot, "strat_x")
+    assert 'label="mystery"' in line
 
 
 def test_to_dot_stellaris_operator_labels_symbol_only():
@@ -1015,7 +1083,9 @@ def test_inject_legend_adds_block_before_svg_close():
     minimal = '<svg xmlns="http://www.w3.org/2000/svg"><polygon/></svg>'
     out = inject_legend(minimal)
     assert '<g id="legend"' in out
-    assert "节点角色" in out
+    assert "Stellaris starmap" in out
+    # Legend text is English-only — no CJK leaks into the figure.
+    assert not re.search(r"[一-鿿]", out)
     # Legend appears before </svg>.
     assert out.index('id="legend"') < out.index("</svg>")
 
@@ -1025,13 +1095,19 @@ def test_inject_legend_includes_all_node_role_rows():
     from gaia.cli.commands._stellaris_svg import inject_legend
 
     out = inject_legend('<svg xmlns="http://www.w3.org/2000/svg"></svg>')
-    # Knowledge boxes
-    assert "premise" in out
-    assert "derived" in out
-    assert "root claim" in out
-    # Strategies
-    assert "deduction" in out
-    assert "support" in out
+    # Knowledge boxes — English-only labels.
+    assert "premise · no upstream strategy/operator" in out
+    assert "derived · ≥1 upstream strategy/operator" in out
+    assert "★ root claim · belief-prop seed" in out
+    assert "⊕ support (independent evidence)" in out
+    assert "box numbers:" in out
+    # Strategies — now glyph-coded (mirrors the dot node labels).
+    assert "∴ deduction" in out
+    assert "⊕ support" in out
+    # The strategy glyphs render as their own <text> nodes (icon labels), not
+    # just inside the row-label text.
+    assert out.count("∴") >= 2
+    assert out.count("⊕") >= 2
     # All 6 operator types by symbol + name
     for sym in ("⊗", "⊙", "⊃", "¬", "∨", "∧"):
         assert sym in out
@@ -1044,6 +1120,48 @@ def test_inject_legend_includes_all_node_role_rows():
         "conjunction",
     ):
         assert tname in out
+
+
+def test_inject_legend_frontier_row_off_by_default():
+    """Without `include_frontier`, the legend has no fog row (starmap unchanged)."""
+    from gaia.cli.commands._stellaris_svg import inject_legend
+
+    out = inject_legend('<svg xmlns="http://www.w3.org/2000/svg"></svg>')
+    assert "frontier · unexplored (fog)" not in out
+    assert "stroke-dasharray" not in out
+
+
+def test_inject_legend_frontier_row_added_when_requested():
+    """With `include_frontier=True`, a dashed fog row + label appear."""
+    from gaia.cli.commands._stellaris_svg import inject_legend
+
+    out = inject_legend('<svg xmlns="http://www.w3.org/2000/svg"></svg>', include_frontier=True)
+    assert "frontier · unexplored (fog)" in out
+    # The fog icon is a dashed rounded rect in the question palette.
+    assert 'stroke-dasharray="4,2"' in out
+    assert "#332416" in out
+    assert "#caa84a" in out
+    # The other node-role rows still render.
+    assert "premise · no upstream strategy/operator" in out
+
+
+def test_build_legend_svg_frontier_flag_controls_fog_row():
+    """`_build_legend_svg` gates the fog row on its flag."""
+    from gaia.cli.commands._stellaris_svg import _build_legend_svg
+
+    assert "frontier · unexplored (fog)" not in _build_legend_svg()
+    assert "frontier · unexplored (fog)" in _build_legend_svg(include_frontier=True)
+
+
+def test_post_process_stellaris_svg_frontier_flag_gates_fog_row():
+    """`post_process_stellaris_svg` only emits the fog row when `include_frontier`."""
+    from gaia.cli.commands._stellaris_svg import post_process_stellaris_svg
+
+    svg = '<svg xmlns="http://www.w3.org/2000/svg"><polygon fill="#05060f"/></svg>'
+    # Default (starmap path) — no fog row.
+    assert "frontier · unexplored (fog)" not in post_process_stellaris_svg(svg)
+    # Explorer path — fog row present.
+    assert "frontier · unexplored (fog)" in post_process_stellaris_svg(svg, include_frontier=True)
 
 
 def test_inject_legend_idempotent():
@@ -1079,7 +1197,11 @@ def test_starmap_svg_stellaris_includes_legend(tmp_path):
     assert result.exit_code == 0, result.output
     svg = (pkg_dir / out).read_text(encoding="utf-8")
     assert '<g id="legend"' in svg
-    assert "节点角色" in svg
+    assert "Stellaris starmap" in svg
+    # No CJK leaks into the rendered stellaris figure.
+    assert not re.search(r"[一-鿿]", svg)
+    # Plain starmap has no fog nodes, so the frontier legend row must be absent.
+    assert "frontier · unexplored (fog)" not in svg
 
 
 @pytest.mark.skipif(not _has_graphviz(), reason="graphviz binaries not on PATH")

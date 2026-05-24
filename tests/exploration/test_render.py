@@ -26,6 +26,7 @@ from typer.testing import CliRunner
 
 from gaia.cli.main import app as gaia_app
 from gaia.engine.exploration.render import (
+    _two_word_label,
     exploration_header_fields,
     frontier_graph_elements,
     inject_exploration_header,
@@ -103,13 +104,63 @@ def test_frontier_graph_elements_builds_question_nodes() -> None:
         assert n["type"] == "question"
         assert n["belief"] is None
         assert n["exported"] is False
-    # The lkm paper carries its title as label.
+    # The drawn label is truncated to its first two words (+ … since the title
+    # has more). `title` is left None so it can't override the truncated label
+    # at render time (the dot emitter renders `title or label`).
     paper = next(n for n in nodes if n["id"] == "PAPER42")
-    assert paper["title"] == "On the Acceleration of Falling Bodies"
+    assert paper["title"] is None
+    assert paper["label"] == "On the…"
     # An edge is added only to a source that is actually in the graph.
     assert {"source": seed, "target": "PAPER42", "role": "background"} in edges
     # The qid contact's source (_qid("not_in_graph")) is NOT a node → no dangling edge.
     assert all(e["target"] != _qid("unmaterialized_factor") for e in edges)
+
+
+def test_two_word_label_truncates_to_first_two_words() -> None:
+    # > 2 words → first two + ellipsis.
+    assert _two_word_label("Muon g − 2 and Δα connection") == "Muon g…"
+    assert _two_word_label("Evidence for and implications thereof") == "Evidence for…"
+    # ≤ 2 words → unchanged (no ellipsis).
+    assert _two_word_label("paper PAPER42") == "paper PAPER42"
+    assert _two_word_label("solo") == "solo"
+    # Never yields an empty label.
+    assert _two_word_label("PAPER42") == "PAPER42"
+
+
+def test_frontier_graph_elements_truncates_and_always_labels() -> None:
+    """Every drawn fog node shows a non-empty, two-word-truncated label."""
+    m = ExplorationMap(
+        seeds=[{"kind": "claim", "text": "q", "qid": _qid("seed")}],
+        policy=Policy(doctrine="Surveyor", budget_k=3),
+    )
+    # Multi-word title → first two words + … ; title-less lkm → "paper <id>".
+    m.frontier.append(
+        Contact(
+            id="ct_multi",
+            ref={"kind": "lkm", "value": "PAPER_MULTI"},
+            score=0.9,
+            status="open",
+            meta={"title": "Evidence for and implications thereof"},
+        )
+    )
+    m.frontier.append(
+        Contact(
+            id="ct_titleless",
+            ref={"kind": "lkm", "value": "PAPER_BARE"},
+            score=0.5,
+            status="open",
+        )
+    )
+    nodes, _edges = frontier_graph_elements(m, existing_node_ids=set())
+    by_id = {n["id"]: n for n in nodes}
+    assert by_id["PAPER_MULTI"]["label"] == "Evidence for…"
+    # Title-less contact still labeled: "paper PAPER_BARE" is ≤2 words → kept whole.
+    assert by_id["PAPER_BARE"]["label"] == "paper PAPER_BARE"
+    # No drawn fog node is ever blank, and `title` never carries the full text
+    # (which the dot emitter would prefer over the truncated `label`).
+    for n in nodes:
+        assert n["label"].strip() != ""
+        assert n["title"] is None
 
 
 def test_frontier_graph_elements_caps_fog_by_score() -> None:
@@ -236,6 +287,30 @@ def test_cli_render_custom_out_path(galileo_pkg: Path, tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert custom.exists()
     assert custom.read_text(encoding="utf-8").lstrip().startswith("<!DOCTYPE html>")
+
+
+@pytest.mark.skipif(shutil.which("sfdp") is None, reason="Graphviz sfdp not on PATH")
+def test_render_stellaris_svg_fog_legend_gated_by_frontier_flag() -> None:
+    """The fog legend row is drawn iff `include_frontier` is set.
+
+    `render_command` passes `include_frontier=bool(frontier_nodes)`, so the fog
+    row appears only when frontier (fog) boxes were actually overlaid — never on
+    the plain `gaia inspect starmap` stellaris path (which renders the shared
+    legend with the flag left False).
+    """
+    from gaia.explore_client.verbs import _render_stellaris_svg
+
+    dot = 'digraph G { bgcolor="#05060f"; a [label="a"]; }'
+
+    without = _render_stellaris_svg(dot, include_frontier=False)
+    assert "frontier · unexplored (fog)" not in without
+    assert 'stroke-dasharray="4,2"' not in without
+
+    with_fog = _render_stellaris_svg(dot, include_frontier=True)
+    assert "frontier · unexplored (fog)" in with_fog
+    assert 'stroke-dasharray="4,2"' in with_fog
+    # Default (no flag) matches the starmap path — no fog row.
+    assert _render_stellaris_svg(dot) == without
 
 
 def test_cli_render_without_init_fails_gracefully(galileo_pkg: Path) -> None:
