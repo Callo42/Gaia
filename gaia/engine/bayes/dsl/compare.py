@@ -372,6 +372,21 @@ def compare(
     ``metadata["comparison"]`` describing the exclusivity contract and,
     after compilation, the per-hypothesis log-likelihood table.
 
+    Point vs composite hypotheses
+    -----------------------------
+    Use a point distribution such as ``Binomial(n, p=v)`` only when the
+    hypothesis really fixes the parameter value. If the hypothesis
+    commits to a direction or region instead, use a compound
+    distribution such as ``BetaBinomial(n, alpha, beta)``.
+
+    Comparing a point hypothesis with a diffuse alternative such as
+    ``BetaBinomial(n, alpha=1, beta=1)`` can produce extreme Bayes
+    factors from one Gaia observation claim when the data are only
+    slightly off the point. Run ``gaia sdk`` for the local SDK reference
+    and cheat sheet; see the Bayes Hypothesis Types guide in the Gaia
+    docs (``docs/for-users/bayes-hypothesis-types.md``) for the full
+    treatment.
+
     Exclusivity contracts
     ---------------------
     ``exclusivity`` controls what structural-action relationship Gaia
