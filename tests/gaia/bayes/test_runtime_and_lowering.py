@@ -16,6 +16,7 @@ from gaia.engine.bp.lowering import lower_local_graph
 from gaia.engine.ir.operator import OperatorType
 from gaia.engine.ir.parameterization import CROMWELL_EPS
 from gaia.engine.lang import (
+    BetaBinomial,
     Binomial,
     Domain,
     Nat,
@@ -1123,3 +1124,147 @@ def test_three_model_pairwise_contradiction_remains_supported():
     }
     assert contradict_pairs == expected_pairs
     assert cmp_result.metadata["comparison"]["exclusivity"] == "pairwise_contradiction"
+
+
+# -----------------------------------------------------------------------------
+# Lindley-Jeffreys diagnostic
+# -----------------------------------------------------------------------------
+
+
+def _compile_lindley_setup(*, k_observed: int, alpha: float, beta: float):
+    """Build a point-Binomial(p=0.10) vs BetaBinomial(α, β) comparison."""
+    pkg = CollectedPackage(name="bayes_lindley_pkg", namespace="t")
+    token = _current_package.set(pkg)
+    try:
+        theta = Variable(symbol="theta", domain=Probability)
+        k = Variable(symbol="k", domain=Nat, value=k_observed)
+        n = 244
+
+        h_path = parameter(theta, 0.10, content="theta = 0.10.", prior=0.5, label="h_path")
+        h_alt = parameter(theta, 0.5, content="theta diffuse.", prior=0.5, label="h_alt")
+        data = observe(k, value=k_observed, label="data", rationale=f"k = {k_observed}.")
+        model_path = bayes.model(
+            h_path,
+            observable=k,
+            distribution=Binomial("k under p=0.10", n=n, p=theta),
+            label="model_path",
+        )
+        model_alt = bayes.model(
+            h_alt,
+            observable=k,
+            distribution=BetaBinomial("k under diffuse", n=n, alpha=alpha, beta=beta),
+            label="model_alt",
+        )
+        cmp_result = bayes.compare(
+            data,
+            models=[model_path, model_alt],
+            label="cmp_lindley",
+        )
+    finally:
+        _current_package.reset(token)
+    return pkg, cmp_result
+
+
+def _ir_comparison_metadata(compiled, cmp_result):
+    """Pull the comparison helper's IR-side metadata."""
+    cmp_id = compiled.knowledge_ids_by_object[id(cmp_result)]
+    cmp_ir = next(k for k in compiled.graph.knowledges if k.id == cmp_id)
+    return cmp_ir.metadata["comparison"]
+
+
+def test_compare_emits_lindley_diagnostic_for_point_vs_diffuse_uniform_extreme():
+    """k=4 vs Binomial(244, 0.10) (mean 24.4) hits the Lindley trap; warning fires."""
+    pkg, cmp_result = _compile_lindley_setup(k_observed=4, alpha=1, beta=1)
+
+    with pytest.warns(UserWarning, match="Lindley-Jeffreys trap"):
+        compiled = compile_package_artifact(pkg)
+
+    cmp_md = _ir_comparison_metadata(compiled, cmp_result)
+    assert cmp_md["lindley_signature"] is True
+    assert cmp_md["lindley_warning"] is True
+    assert cmp_md["per_observation_log_lr"] > 5.0
+    assert cmp_md["lindley_threshold"] == 5.0
+    assert cmp_md["max_pairwise_log_lr"] == pytest.approx(
+        cmp_md["per_observation_log_lr"], rel=1e-9
+    )
+
+
+def test_compare_lindley_quiet_for_point_vs_point_extreme():
+    """Mendel-style point-vs-point comparison with extreme LR: no Lindley warning."""
+    import warnings as _w
+
+    pkg, _h_31, _h_null, _data, _model_31, _model_null, cmp_result = _compiled_mendel_bayes()
+    with _w.catch_warnings(record=True) as caught:
+        _w.simplefilter("always")
+        compiled = compile_package_artifact(pkg)
+
+    lindley = [w for w in caught if "Lindley" in str(w.message)]
+    assert lindley == [], f"unexpected Lindley warning(s): {[str(w.message) for w in lindley]}"
+
+    cmp_md = _ir_comparison_metadata(compiled, cmp_result)
+    assert cmp_md["lindley_signature"] is False
+    assert cmp_md["lindley_warning"] is False
+    # Per-obs log-LR can still be large; only the structural signature
+    # gates the warning.
+    assert cmp_md["per_observation_log_lr"] > 5.0
+
+
+def test_compare_lindley_quiet_for_composite_vs_composite():
+    """Two non-degenerate BetaBinomials (no uniform diffuse): no Lindley warning."""
+    import warnings as _w
+
+    pkg = CollectedPackage(name="bayes_composite_pkg", namespace="t")
+    token = _current_package.set(pkg)
+    try:
+        theta = Variable(symbol="theta", domain=Probability)
+        k = Variable(symbol="k", domain=Nat, value=10)
+        n = 100
+
+        h_elev = parameter(theta, 0.20, content="elevated.", prior=0.5, label="h_elev")
+        h_base = parameter(theta, 0.05, content="baseline.", prior=0.5, label="h_base")
+        data = observe(k, value=10, label="data", rationale="k = 10.")
+        model_elev = bayes.model(
+            h_elev,
+            observable=k,
+            distribution=BetaBinomial("elevated", n=n, alpha=10, beta=40),
+            label="model_elev",
+        )
+        model_base = bayes.model(
+            h_base,
+            observable=k,
+            distribution=BetaBinomial("baseline", n=n, alpha=1, beta=20),
+            label="model_base",
+        )
+        cmp_result = bayes.compare(
+            data,
+            models=[model_elev, model_base],
+            label="cmp_composite",
+        )
+    finally:
+        _current_package.reset(token)
+
+    with _w.catch_warnings(record=True) as caught:
+        _w.simplefilter("always")
+        compiled = compile_package_artifact(pkg)
+
+    lindley = [w for w in caught if "Lindley" in str(w.message)]
+    assert lindley == [], f"unexpected Lindley warning(s): {[str(w.message) for w in lindley]}"
+
+    cmp_md = _ir_comparison_metadata(compiled, cmp_result)
+    assert cmp_md["lindley_signature"] is False
+    assert cmp_md["lindley_warning"] is False
+
+
+def test_compare_metadata_always_exposes_diagnostic_fields():
+    """The diagnostic numbers are present on every comparison."""
+    pkg, cmp_result = _compile_lindley_setup(k_observed=24, alpha=1, beta=1)
+    # k=24 is at the Binomial mode: log-LR is small; no warning, but fields exist
+    compiled = compile_package_artifact(pkg)
+
+    cmp_md = _ir_comparison_metadata(compiled, cmp_result)
+    assert "max_pairwise_log_lr" in cmp_md
+    assert "per_observation_log_lr" in cmp_md
+    assert "lindley_threshold" in cmp_md
+    assert "lindley_signature" in cmp_md
+    assert "lindley_warning" in cmp_md
+    assert cmp_md["lindley_warning"] is False

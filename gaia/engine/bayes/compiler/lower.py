@@ -29,8 +29,17 @@ from __future__ import annotations
 
 import hashlib
 import math
+import warnings
 from dataclasses import dataclass, field
 from typing import Any
+
+# Per-observation |log LR| above which `bayes.compare` warns about a possible
+# Lindley-Jeffreys mismatch (point hypothesis vs diffuse alternative producing
+# very large Bayes factors from data only slightly off the point). The number
+# is the standard "decisive" threshold from Kass & Raftery (1995, Table 1).
+# Authors can suppress the warning via `warnings.filterwarnings(...)` or by
+# matching commitment levels on both compared models.
+LINDLEY_PER_OBS_LOG_LR_THRESHOLD = 5.0
 
 from gaia.engine.bayes.distributions.base import _is_deferred_reference
 from gaia.engine.bayes.runtime import Model, ModelCompare, PrecomputedLikelihoods
@@ -197,6 +206,31 @@ def _comparison_hypotheses(action: ModelCompare) -> tuple[Claim, ...]:
     return tuple(h for h in hypotheses if h is not None)
 
 
+def _has_diffuse_uniform_alternative(model_actions: tuple[Model, ...]) -> bool:
+    """Return True if any compared model uses ``BetaBinomial(n, alpha=1, beta=1)``.
+
+    This is the canonical "diffuse uniform" alternative used in the Mendel
+    example and in the cheat sheet. Pairing it with a sharp point hypothesis
+    is the classical Lindley-Jeffreys setup, where the diffuse model wins by
+    default for any data slightly off the point's predicted mode.
+    """
+    for action in model_actions:
+        dist = getattr(action, "distribution", None)
+        if dist is None:
+            continue
+        if getattr(dist, "kind", None) != "betabinomial":
+            continue
+        params = getattr(dist, "params", None) or {}
+        alpha = params.get("alpha")
+        beta = params.get("beta")
+        try:
+            if alpha is not None and beta is not None and float(alpha) == 1.0 and float(beta) == 1.0:
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
+
+
 def _lower_comparison(
     action: ModelCompare,
     *,
@@ -223,6 +257,25 @@ def _lower_comparison(
             "predictive distribution support, or use precomputed likelihoods."
         )
 
+    # Lindley-Jeffreys diagnostic. Compute per-observation |log LR| and flag
+    # when a large LR combines with the structural signature of the trap:
+    # at least one compared model is the canonical "diffuse uniform"
+    # alternative (BetaBinomial(n, alpha=1, beta=1)). Point-vs-point and
+    # composite-vs-composite comparisons can also produce large LRs but are
+    # not the Lindley trap. See docs/for-users/bayes-hypothesis-types.md.
+    finite_logl = [v for v in likelihoods.values() if math.isfinite(v)]
+    n_obs = max(1, len(action.data))
+    if len(finite_logl) >= 2:
+        max_pairwise_log_lr = max(finite_logl) - min(finite_logl)
+    else:
+        max_pairwise_log_lr = 0.0
+    per_observation_log_lr = max_pairwise_log_lr / n_obs
+    lindley_signature = _has_diffuse_uniform_alternative(model_actions)
+    lindley_warning = (
+        per_observation_log_lr > LINDLEY_PER_OBS_LOG_LR_THRESHOLD
+        and lindley_signature
+    )
+
     comparison_metadata = {
         "kind": "comparison",
         "exclusivity": action.exclusivity,
@@ -230,7 +283,28 @@ def _lower_comparison(
         "data": data_ids,
         "models": model_ids,
         "hypotheses": [knowledge_map[id(h)] for h in hypotheses],
+        "max_pairwise_log_lr": max_pairwise_log_lr,
+        "per_observation_log_lr": per_observation_log_lr,
+        "lindley_threshold": LINDLEY_PER_OBS_LOG_LR_THRESHOLD,
+        "lindley_signature": lindley_signature,
+        "lindley_warning": lindley_warning,
     }
+
+    if lindley_warning:
+        label_repr = action.label or action.helper.content
+        warnings.warn(
+            f"bayes.compare ({label_repr!r}): per-observation |log LR| = "
+            f"{per_observation_log_lr:.2f} > threshold {LINDLEY_PER_OBS_LOG_LR_THRESHOLD}. "
+            "Extreme single-observation Bayes factors often indicate the "
+            "Lindley-Jeffreys trap: a point hypothesis vs a diffuse alternative "
+            "produces very large likelihood ratios for data only slightly off "
+            "the point, even when the data are qualitatively consistent with "
+            "the broader hypothesis. Consider using compound distributions "
+            "(e.g. BetaBinomial) on both sides. "
+            "See docs/for-users/bayes-hypothesis-types.md.",
+            UserWarning,
+            stacklevel=2,
+        )
     if isinstance(action.precomputed, PrecomputedLikelihoods):
         comparison_metadata["precomputed_source"] = knowledge_map[id(action.precomputed)]
 
