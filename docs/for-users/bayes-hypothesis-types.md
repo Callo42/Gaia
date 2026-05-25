@@ -1,5 +1,8 @@
 # Bayes hypothesis types
 
+> **Status:** Current user guide for authoring `bayes.compare` model
+> distributions.
+
 This guide explains the two kinds of hypothesis you can model with
 `bayes.compare`, why the choice matters, and how to avoid the
 Lindley–Jeffreys trap that produces over-confident posteriors.
@@ -69,7 +72,10 @@ mass near one value.
 If the observation is even slightly off the point's predicted value, the
 point model assigns it very low probability while the diffuse model assigns
 it ordinary probability. The Bayes factor against the point hypothesis
-explodes — often 10²–10⁵ from a single observation.
+explodes — often 10²–10⁵ from a single Gaia observation claim. For a
+`Binomial(n=...)` observation, that claim may itself summarize many
+underlying trials; "single observation" here means one `observe(...)` input
+to `bayes.compare`, not one Bernoulli trial.
 
 This is mathematically correct: a sharp prediction that misses is strong
 evidence against the sharp prediction. But the same data may still
@@ -148,8 +154,8 @@ For most empirical hypotheses, both sides should be composite.
    not, are you intentionally invoking parsimony?
 3. **Spread realism**: does each compound distribution allow values that the
    hypothesis would not contradict?
-4. **Single-observation log-LR**: does the resulting `|log LR|` per
-   observation exceed roughly 3? If so, sanity-check that the distributions
-   are not over-precise.
+4. **Single-observation-claim log-LR**: does the resulting `|log LR|` per
+   Gaia observation claim exceed roughly 3? If so, sanity-check that the
+   distributions are not over-precise.
 
 If check 4 fires, return to check 1.

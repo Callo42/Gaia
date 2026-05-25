@@ -207,10 +207,10 @@ captures what the hypothesis actually predicts.
 
 Two kinds of hypothesis, modelled differently:
 
-| Kind | Theory says | Distribution to use |
+| Kind | Theory says | Use |
 |---|---|---|
-| **Point** | parameter equals a specific value | distribution with that value fixed (e.g. `Binomial(n, p=v)`) |
-| **Composite** | parameter lies in a region (elevated, depressed, above baseline) | compound distribution integrating over the region (e.g. `BetaBinomial(n, α, β)`) |
+| **Point** | parameter equals a specific value | fixed-value distribution |
+| **Composite** | parameter lies in a region | compound distribution |
 
 ### Point hypothesis (Mendel's 3:1)
 
@@ -243,7 +243,8 @@ Bayes factors 10²–10⁵ against H even for data only slightly off the point.
 Symptom: a single observation gives posterior > 0.99 or < 0.01. Match the
 level of commitment on both sides — point-vs-point or composite-vs-composite —
 unless the theory genuinely demands a point.
-See `docs/for-users/bayes-hypothesis-types.md` for the full treatment.
+See the Bayes Hypothesis Types guide in the Gaia docs
+(`docs/for-users/bayes-hypothesis-types.md`) for the full treatment.
 
 ---
 
