@@ -57,6 +57,7 @@ from gaia.engine.exploration.frontier import (
     reconcile_frontier,
     resolve_freetext_seed_qid,
 )
+from gaia.engine.exploration.health import MapHealth, compute_map_health
 from gaia.engine.exploration.observe import (
     materialized_paper_ids_from_roots,
     observe_lkm_results,
@@ -66,6 +67,7 @@ from gaia.engine.exploration.render import (
     exploration_header_fields,
     frontier_graph_elements,
     inject_exploration_header,
+    ratified_node_classes,
     wrap_self_contained_html,
 )
 from gaia.engine.exploration.scorer import (
@@ -102,8 +104,10 @@ _DOCTRINE_OPT = typer.Option(
     "--doctrine",
     help=(
         f"Named doctrine preset: {sorted(DOCTRINE_PRESETS)}. "
-        "Note: tension/bridge scoring is not yet wired (DESIGN §8), so "
-        "tension/bridge-led presets (e.g. 'Inquisitor') are currently inert."
+        "Note: bridge scoring is now wired (EXPANSION.md §3.B), so bridge-led "
+        "presets (Cartographer / Diplomat) are live; tension scoring is still "
+        "deferred (EXPANSION.md §3.B), so the tension-led 'Inquisitor' preset "
+        "remains inert."
     ),
 )
 _BUDGET_K_OPT = typer.Option(5, "--budget-k", help="Top-k contacts to survey per round.")
@@ -142,6 +146,57 @@ _RENDER_OUT_OPT = typer.Option(
 
 def _gaia_dir(pkg: str) -> Path:
     return Path(pkg).resolve() / ".gaia"
+
+
+def _map_health(exploration_map: ExplorationMap, view: JointView) -> MapHealth:
+    """Compute the joint-graph MapHealth for the map (EXPANSION.md §3.A).
+
+    The surveyed set is ``map.surveyed`` keys, the seeds the resolved seed QIDs,
+    the edges the joint view's edge set, and the ratified separations the map's
+    recorded islands — the same inputs the orchestrator uses, so the standalone
+    verbs and ``turn`` agree on connectivity.
+    """
+    surveyed = list(exploration_map.surveyed.keys())
+    seeds = [str(s["qid"]) for s in exploration_map.seeds if s.get("qid")]
+    return compute_map_health(
+        surveyed,
+        seeds,
+        view.edges,
+        ratified=exploration_map.ratified_as_health_objects(),
+    )
+
+
+def _echo_status_connectivity(pkg: str, exploration_map: ExplorationMap) -> None:
+    """Print the MapHealth connectivity readout for ``status`` (EXPANSION.md §3/§4).
+
+    Best-effort: a degraded joint view (uncompiled deps, no IR) must not break
+    status, so the whole compute is guarded. No output when no graph is resolved.
+    """
+    try:
+        graph = resolve_graph(pkg)
+        if graph is None:
+            return
+        view = _require_joint_view(pkg, graph)
+        health = _map_health(exploration_map, view)
+    except Exception:
+        # status must never crash on a degraded view — skip the readout.
+        return
+    policy = exploration_map.policy
+    unhealthy = health.is_unhealthy(
+        min_orphan_components=policy.fragment_min_orphans,
+        orphan_fraction=policy.fragment_orphan_fraction,
+    )
+    verdict = "FRAGMENTED (consolidate)" if unhealthy else "maintainable"
+    typer.echo(
+        f"  connectivity:   {health.component_count} component(s), "
+        f"{len(health.orphans)} orphan(s) "
+        f"({health.unratified_orphan_count} un-ratified), "
+        f"{health.ratified_count} ratified, {len(health.reopened)} reopened "
+        f"— {verdict}"
+    )
+    for comp in health.reopened:
+        members = ", ".join(comp.members[:3])
+        typer.echo(f"    - REOPENED island: {members} (new bridging evidence)")
 
 
 def _load_beliefs(pkg: str) -> dict[str, float]:
@@ -421,22 +476,24 @@ def init_command(
         )
         raise typer.Exit(2)
 
-    # Warn when the chosen doctrine leads on the currently-inert tension/bridge
-    # potential slots (DESIGN §8 defers tension/bridge wiring), so its headline
-    # lever does nothing yet — surfaced here at init rather than only later in the
-    # survey task envelope. Mirrors that note.
+    # Warn when the chosen doctrine leads on the still-inert TENSION potential
+    # slot (EXPANSION.md §3.B defers tension wiring this iteration), so its
+    # headline lever does nothing yet — surfaced here at init rather than only
+    # later in the survey task envelope. Bridge is now WIRED (EXPANSION.md §3.B),
+    # so w_bridge counts as live, not inert.
     _weights = DOCTRINE_PRESETS[doctrine]
-    _inert = _weights.get("w_tension", 0.0) + _weights.get("w_bridge", 0.0)
+    _inert = _weights.get("w_tension", 0.0)
     _live = (
         _weights.get("w_uncertainty", 0.0)
         + _weights.get("w_coverage", 0.0)
         + _weights.get("w_relevance", 0.0)
+        + _weights.get("w_bridge", 0.0)
     )
     if _inert > _live:
         typer.echo(
-            f"Warning: doctrine {doctrine!r} leads on tension/bridge potential, "
-            "which are currently inert (0.0 scoring slots; DESIGN §8 defers "
-            "tension/bridge wiring), so its ranking is dominated by the remaining "
+            f"Warning: doctrine {doctrine!r} leads on tension potential, "
+            "which is still inert (a 0.0 scoring slot; EXPANSION.md §3.B defers "
+            "tension wiring), so its ranking is dominated by the remaining "
             "terms. Prefer 'Surveyor' or 'Cartographer' for now.",
             err=True,
         )
@@ -626,7 +683,17 @@ def frontier_command(
     # ``obligation_pressure`` exactly as ``gaia-lkm-explore turn`` does — the two
     # surfaces must agree (a contact discharging an open obligation scores 1.0).
     obligations = load_open_obligations(pkg)
-    score_frontier(exploration_map, beliefs=beliefs, edges=view.edges, obligations=obligations)
+    # (EXPANSION.md §3.B) MapHealth activates bridge_potential + qid new_territory
+    # in the score, so this standalone verb ranks identically to the orchestrator.
+    health = _map_health(exploration_map, view)
+    score_frontier(
+        exploration_map,
+        beliefs=beliefs,
+        edges=view.edges,
+        obligations=obligations,
+        health=health,
+        materialized=view.materialized,
+    )
     _refresh_stats(exploration_map)
     save_map(pkg, exploration_map)
 
@@ -876,8 +943,13 @@ def status_command(
     typer.echo(f"Exploration status for {pkg}")
     typer.echo(f"  round:          {exploration_map.round}")
     typer.echo(f"  doctrine:       {exploration_map.policy.doctrine}")
+    typer.echo(f"  mode_select:    {exploration_map.policy.mode_select}")
     typer.echo(f"  seeds:          {len(exploration_map.seeds)}")
     typer.echo(f"  surveyed:       {len(exploration_map.surveyed)}")
+
+    # (EXPANSION.md §3/§4) Connectivity readout — components / orphans / ratified /
+    # reopened, and whether the map is unhealthy past the fragmentation threshold.
+    _echo_status_connectivity(pkg, exploration_map)
     # Split the open frontier into paper vs claim contacts with the
     # same vocabulary `render` uses, so the two surfaces never appear to disagree.
     n_papers, n_claims = _open_frontier_split(ranked)
@@ -1040,9 +1112,31 @@ def render_command(
     graph_payload.setdefault("nodes", []).extend(frontier_nodes)
     graph_payload.setdefault("edges", []).extend(frontier_edges)
 
+    # (EXPANSION.md §3.E / Phase 3) Mark surveyed nodes in a ratified (or reopened)
+    # island so the figure can draw a ratified boundary DISTINCTLY from a fog gap —
+    # a deliberate border, not "unexplored" — and FLAG a reopened one. Best-effort
+    # MapHealth (a degraded joint view must not break render); the classifier falls
+    # back to "ratified" for every recorded member when no live health is available.
+    health = None
+    try:
+        graph_for_health = resolve_graph(pkg)
+        if graph_for_health is not None:
+            health = _map_health(exploration_map, _require_joint_view(pkg, graph_for_health))
+    except Exception:
+        # render must not crash on a degraded view — skip the ratified styling.
+        health = None
+    node_classes = ratified_node_classes(exploration_map, health=health)
+    if node_classes:
+        for node in graph_payload.get("nodes", []):
+            cls = node_classes.get(str(node.get("id")))
+            if cls is not None:
+                meta = node.setdefault("metadata", {}) or {}
+                meta["ratified_separation"] = cls  # "ratified" | "reopened"
+                node["metadata"] = meta
+
     dot_source = to_dot(json.dumps(graph_payload), theme="stellaris")
     svg = _render_stellaris_svg(dot_source, include_frontier=bool(frontier_nodes))
-    svg = inject_exploration_header(svg, exploration_header_fields(exploration_map))
+    svg = inject_exploration_header(svg, exploration_header_fields(exploration_map, health=health))
     html_doc = wrap_self_contained_html(svg)
 
     out_path = Path(out).resolve() if out is not None else gaia_dir / "exploration" / "map.html"
