@@ -33,14 +33,6 @@ import warnings
 from dataclasses import dataclass, field
 from typing import Any
 
-# Per-observation |log LR| above which `bayes.compare` warns about a possible
-# Lindley-Jeffreys mismatch (point hypothesis vs diffuse alternative producing
-# very large Bayes factors from data only slightly off the point). The number
-# is the standard "decisive" threshold from Kass & Raftery (1995, Table 1).
-# Authors can suppress the warning via `warnings.filterwarnings(...)` or by
-# matching commitment levels on both compared models.
-LINDLEY_PER_OBS_LOG_LR_THRESHOLD = 5.0
-
 from gaia.engine.bayes.distributions.base import _is_deferred_reference
 from gaia.engine.bayes.runtime import Model, ModelCompare, PrecomputedLikelihoods
 from gaia.engine.bp.factor_graph import CROMWELL_EPS
@@ -55,6 +47,14 @@ from gaia.engine.lang.formula.predicate import Equals
 from gaia.engine.lang.formula.primitives import PrimitiveType
 from gaia.engine.lang.formula.term import Constant
 from gaia.engine.lang.runtime import Claim, Distribution, Domain, Knowledge, Variable
+
+# Per-observation |log LR| above which `bayes.compare` warns about a possible
+# Lindley-Jeffreys mismatch (point hypothesis vs diffuse alternative producing
+# very large Bayes factors from data only slightly off the point). The number
+# is the standard "decisive" threshold from Kass & Raftery (1995, Table 1).
+# Authors can suppress the warning via `warnings.filterwarnings(...)` or by
+# matching commitment levels on both compared models.
+LINDLEY_PER_OBS_LOG_LR_THRESHOLD = 5.0
 
 
 @dataclass(frozen=True)
@@ -215,16 +215,24 @@ def _has_diffuse_uniform_alternative(model_actions: tuple[Model, ...]) -> bool:
     default for any data slightly off the point's predicted mode.
     """
     for action in model_actions:
-        dist = getattr(action, "distribution", None)
-        if dist is None:
+        if action.distribution is None or action.hypothesis is None:
             continue
-        if getattr(dist, "kind", None) != "betabinomial":
+        try:
+            impl = _bind_distribution_impl(action.distribution, action.hypothesis)
+        except ValueError:
             continue
-        params = getattr(dist, "params", None) or {}
+        if getattr(impl, "kind", None) != "betabinomial":
+            continue
+        params = getattr(impl, "params", None) or {}
         alpha = params.get("alpha")
         beta = params.get("beta")
         try:
-            if alpha is not None and beta is not None and float(alpha) == 1.0 and float(beta) == 1.0:
+            if (
+                alpha is not None
+                and beta is not None
+                and float(alpha) == 1.0
+                and float(beta) == 1.0
+            ):
                 return True
         except (TypeError, ValueError):
             continue
@@ -262,18 +270,15 @@ def _lower_comparison(
     # at least one compared model is the canonical "diffuse uniform"
     # alternative (BetaBinomial(n, alpha=1, beta=1)). Point-vs-point and
     # composite-vs-composite comparisons can also produce large LRs but are
-    # not the Lindley trap. See docs/for-users/bayes-hypothesis-types.md.
+    # not the Lindley trap. See the Bayes Hypothesis Types user guide
+    # (docs/for-users/bayes-hypothesis-types.md).
     finite_logl = [v for v in likelihoods.values() if math.isfinite(v)]
     n_obs = max(1, len(action.data))
-    if len(finite_logl) >= 2:
-        max_pairwise_log_lr = max(finite_logl) - min(finite_logl)
-    else:
-        max_pairwise_log_lr = 0.0
+    max_pairwise_log_lr = max(finite_logl) - min(finite_logl) if len(finite_logl) >= 2 else 0.0
     per_observation_log_lr = max_pairwise_log_lr / n_obs
     lindley_signature = _has_diffuse_uniform_alternative(model_actions)
     lindley_warning = (
-        per_observation_log_lr > LINDLEY_PER_OBS_LOG_LR_THRESHOLD
-        and lindley_signature
+        per_observation_log_lr > LINDLEY_PER_OBS_LOG_LR_THRESHOLD and lindley_signature
     )
 
     comparison_metadata = {
@@ -301,7 +306,8 @@ def _lower_comparison(
             "the point, even when the data are qualitatively consistent with "
             "the broader hypothesis. Consider using compound distributions "
             "(e.g. BetaBinomial) on both sides. "
-            "See docs/for-users/bayes-hypothesis-types.md.",
+            "See the Bayes Hypothesis Types user guide "
+            "(docs/for-users/bayes-hypothesis-types.md).",
             UserWarning,
             stacklevel=2,
         )

@@ -18,13 +18,17 @@ from gaia.engine.ir.parameterization import CROMWELL_EPS
 from gaia.engine.lang import (
     BetaBinomial,
     Binomial,
+    Constant,
     Domain,
     Nat,
     Normal,
     Probability,
     Real,
     Variable,
+    claim,
     contradict,
+    equals,
+    land,
     observe,
     parameter,
 )
@@ -1187,6 +1191,53 @@ def test_compare_emits_lindley_diagnostic_for_point_vs_diffuse_uniform_extreme()
     assert cmp_md["max_pairwise_log_lr"] == pytest.approx(
         cmp_md["per_observation_log_lr"], rel=1e-9
     )
+
+
+def test_compare_lindley_diagnostic_resolves_deferred_betabinomial_parameters():
+    """A deferred BetaBinomial(alpha=1, beta=1) still carries the Lindley signature."""
+    pkg = CollectedPackage(name="bayes_lindley_deferred_pkg", namespace="t")
+    token = _current_package.set(pkg)
+    try:
+        theta = Variable(symbol="theta", domain=Probability)
+        alpha = Variable(symbol="alpha", domain=Real)
+        beta = Variable(symbol="beta", domain=Real)
+        k = Variable(symbol="k", domain=Nat, value=4)
+        n = 244
+
+        h_path = parameter(theta, 0.10, content="theta = 0.10.", prior=0.5, label="h_path")
+        h_alt = claim(
+            "Diffuse alternative sets alpha = 1 and beta = 1.",
+            formula=land(equals(alpha, Constant(1.0, Real)), equals(beta, Constant(1.0, Real))),
+            prior=0.5,
+        )
+        h_alt.label = "h_alt"
+        data = observe(k, value=4, label="data", rationale="k = 4.")
+        model_path = bayes.model(
+            h_path,
+            observable=k,
+            distribution=Binomial("k under p=0.10", n=n, p=theta),
+            label="model_path",
+        )
+        model_alt = bayes.model(
+            h_alt,
+            observable=k,
+            distribution=BetaBinomial("k under diffuse", n=n, alpha=alpha, beta=beta),
+            label="model_alt",
+        )
+        cmp_result = bayes.compare(
+            data,
+            models=[model_path, model_alt],
+            label="cmp_lindley_deferred",
+        )
+    finally:
+        _current_package.reset(token)
+
+    with pytest.warns(UserWarning, match="Lindley-Jeffreys trap"):
+        compiled = compile_package_artifact(pkg)
+
+    cmp_md = _ir_comparison_metadata(compiled, cmp_result)
+    assert cmp_md["lindley_signature"] is True
+    assert cmp_md["lindley_warning"] is True
 
 
 def test_compare_lindley_quiet_for_point_vs_point_extreme():
