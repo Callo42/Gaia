@@ -17,6 +17,8 @@ from functools import wraps
 from typing import Any, cast
 
 from gaia.engine.ir.parameterization import CROMWELL_EPS
+from gaia.engine.lang._boolean_valued import is_boolean_valued
+from gaia.engine.lang.dsl._lift import _lift_to_claim
 from gaia.engine.lang.runtime.action import (
     Compute,
     Derive,
@@ -29,10 +31,10 @@ from gaia.engine.lang.runtime.knowledge import Claim, Knowledge
 from gaia.engine.lang.runtime.variable import Variable
 
 
-def _as_given_tuple(given: Claim | tuple[Claim, ...] | list[Claim] | None) -> tuple[Claim, ...]:
+def _as_given_tuple(given: Any) -> tuple[Any, ...]:
     if given is None:
         return ()
-    if isinstance(given, Knowledge):
+    if isinstance(given, Knowledge) or is_boolean_valued(given):
         return (given,)
     return tuple(given)
 
@@ -71,17 +73,33 @@ def _pin_observed_claim(conclusion: Claim) -> None:
 
 
 def derive(
-    conclusion: Claim | str,
+    conclusion: Any,
     *,
-    given: Claim | tuple[Claim, ...] | list[Claim] | None = (),
+    given: Any = (),
     background: list[Knowledge] | None = None,
     rationale: str = "",
     label: str | None = None,
 ) -> Claim:
-    """Logical derivation. Returns the conclusion Claim."""
+    """Logical derivation. Returns the conclusion Claim.
+
+    ``conclusion`` may be a ``Claim``, a ``str`` (which creates a fresh
+    Claim from the content), or any Boolean-valued expression
+    (``ClaimAtom`` / Formula / ``BoolExpr``) that lifts to a helper Claim
+    at the verb boundary per RFC #703.
+
+    Every entry of ``given`` is similarly lifted: a Boolean-valued
+    expression becomes a helper Claim; non-Claim non-Boolean-valued values
+    raise an educational :class:`TypeError`.
+    """
     if isinstance(conclusion, str):
         conclusion = Claim(conclusion)
-    given_tuple = _as_given_tuple(given)
+    else:
+        conclusion = _lift_to_claim(conclusion, verb="derive", position="conclusion")
+    assert isinstance(conclusion, Claim)  # narrow Any back to Claim for mypy
+    given_tuple = tuple(
+        _lift_to_claim(g, verb="derive", position=f"given[{i}]")
+        for i, g in enumerate(_as_given_tuple(given))
+    )
     warrant = _implication_warrant(
         "derive",
         given=given_tuple,
