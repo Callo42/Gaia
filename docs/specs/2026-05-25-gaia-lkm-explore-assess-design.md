@@ -80,6 +80,11 @@ that baseline, not as a replacement for it. The main missing pieces are:
 - focus-aware deep-dive turns, so frontier expansion serves a chosen focus
   rather than only the global open frontier.
 
+The first implementation slice is specified in
+[LKM Explore Artifact MVP Design](2026-05-26-lkm-explore-artifact-mvp-design.md).
+It covers the additive Explore-side artifacts (`scope`, `focuses`, `artifact`,
+and `gate`) and leaves `gaia-evidence assess` for a later spec.
+
 ## 0. Gaia-side 独立推进定位
 
 近期讨论里出现了一个相邻但不同的产品方向：建设一个可分发的
