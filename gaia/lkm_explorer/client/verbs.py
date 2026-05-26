@@ -56,7 +56,9 @@ from gaia.engine.inquiry.focus import resolve_focus_target
 from gaia.engine.inquiry.review import resolve_graph
 from gaia.engine.packaging import write_text_atomic
 from gaia.lkm_explorer.engine.artifacts import (
+    build_focuses_artifact,
     build_scope_artifact,
+    latest_landscape_path,
     parse_dimensions,
 )
 from gaia.lkm_explorer.engine.discoveries import compute_discoveries
@@ -185,6 +187,16 @@ _SCOPE_OUT_OPT = typer.Option(
     None,
     "--out",
     help="Output JSON path (default <pkg>/.gaia/exploration/scope.json).",
+)
+_FOCUSES_LANDSCAPE_OPT = typer.Option(
+    None,
+    "--landscape",
+    help="Landscape JSON path (default latest <pkg>/.gaia/exploration/landscape-*.json).",
+)
+_FOCUSES_OUT_OPT = typer.Option(
+    None,
+    "--out",
+    help="Output JSON path (default <pkg>/.gaia/exploration/focuses.json).",
 )
 _OBSERVE_SOURCE_OPT = typer.Option(
     None,
@@ -1013,6 +1025,55 @@ def landscape_command(
     else:
         typer.echo("  (no unpulled paper leads)")
 
+    if json_out:
+        typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
+
+
+# --------------------------------------------------------------------------- #
+# focuses                                                                     #
+# --------------------------------------------------------------------------- #
+
+
+def focuses_command(
+    pkg: str = _PKG_ARG,
+    landscape: str | None = _FOCUSES_LANDSCAPE_OPT,
+    out: str | None = _FOCUSES_OUT_OPT,
+    json_out: bool = _LANDSCAPE_JSON_OPT,
+) -> None:
+    r"""Create deterministic Explore focuses from a landscape artifact."""
+    map_path = _gaia_dir(pkg) / "exploration" / "map.json"
+    if not map_path.exists():
+        typer.echo(
+            f"Error: no exploration map at {pkg}; run `gaia-lkm-explore init` first.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    landscape_path = Path(landscape) if landscape is not None else latest_landscape_path(pkg)
+    if landscape_path is None or not landscape_path.exists():
+        typer.echo(
+            "Error: no landscape artifact found; run `gaia-lkm-explore landscape` first "
+            "or pass --landscape.",
+            err=True,
+        )
+        raise typer.Exit(2)
+
+    scope_path = _gaia_dir(pkg) / "exploration" / "scope.json"
+    payload = build_focuses_artifact(
+        pkg,
+        scope_path=scope_path if scope_path.exists() else None,
+        landscape_path=landscape_path,
+        landscape=_read_json_object(landscape_path),
+        map_round=load_map(pkg).round,
+    )
+    output_path = (
+        Path(out) if out is not None else _gaia_dir(pkg) / "exploration" / "focuses.json"
+    )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    write_text_atomic(output_path, json.dumps(payload, ensure_ascii=False, indent=2))
+
+    typer.echo(f"Focuses: {len(payload['focuses'])} focus(es) from {landscape_path}.")
+    typer.echo(f"Output: {output_path}")
     if json_out:
         typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
 

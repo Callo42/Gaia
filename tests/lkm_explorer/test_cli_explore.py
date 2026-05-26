@@ -635,6 +635,46 @@ def test_explore_scope_help_lists_options():
     assert "--dimension" in result.output
 
 
+def test_explore_focuses_writes_focuses_from_landscape(galileo_pkg: Path):
+    runner.invoke(
+        app,
+        ["init", str(galileo_pkg), "--seed", _galileo_qid("aristotle_model")],
+    )
+    landscape_result = runner.invoke(
+        app,
+        ["landscape", str(galileo_pkg), "--search-json", str(_FIXTURE)],
+    )
+    assert landscape_result.exit_code == 0, landscape_result.output
+
+    result = runner.invoke(app, ["focuses", str(galileo_pkg)])
+
+    assert result.exit_code == 0, result.output
+    assert "Focuses:" in result.output
+    payload = json.loads(
+        (galileo_pkg / ".gaia" / "exploration" / "focuses.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert payload["kind"] == "exploration_focuses"
+    assert payload["focuses"]
+    focus = payload["focuses"][0]
+    assert focus["kind"] == "paper_lead_cluster"
+    assert focus["recommended_next"] == "assess"
+    assert focus["evidence_refs"]
+
+
+def test_explore_focuses_requires_landscape(galileo_pkg: Path):
+    runner.invoke(
+        app,
+        ["init", str(galileo_pkg), "--seed", _galileo_qid("aristotle_model")],
+    )
+
+    result = runner.invoke(app, ["focuses", str(galileo_pkg)])
+
+    assert result.exit_code == 2
+    assert "no landscape" in result.output
+
+
 def test_explore_observe_dedups_and_skips_materialized(galileo_pkg: Path):
     runner.invoke(
         app,
