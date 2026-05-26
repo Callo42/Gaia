@@ -48,6 +48,38 @@ Explore -> Assess
 - 这两步如何给后面的 `Propose -> Discover -> Merge` 提供干净输入？
 - Gaia 这边应该先独立开发哪一层，才能以后被外部 agent harness 稳定调用？
 
+## Current main baseline, 2026-05-26
+
+After merging the latest `origin/main`, part of this proposal is no longer
+purely future-facing. The current baseline already includes:
+
+- a unified sibling CLI entrypoint, `gaia-lkm-explore`, under
+  `gaia.lkm_explorer.client`;
+- deterministic engine verbs including `init`, `observe`, `landscape`,
+  `frontier`, `round`, `status`, and `render`;
+- a neutral paper-level `landscape` command that aggregates saved
+  `gaia search lkm` result envelopes before deep pulls;
+- MapHealth connectivity, orphan/island detection, ratified separations, and
+  consolidate-oriented readouts;
+- pulled-paper claim triage metadata and `frontier --triage-pulled`;
+- checkpoint-time promotion of pulled-paper `depends_on` scaffolds into live
+  `derive` strategies for exploration inference.
+
+The remaining proposal should therefore be read as the next layer on top of
+that baseline, not as a replacement for it. The main missing pieces are:
+
+- a first-class `scope` artifact rather than ad hoc seed text;
+- a `foci` / obligation artifact that turns landscape findings into assessment
+  targets;
+- a standard `lkm_exploration` artifact envelope with provenance and gate
+  status;
+- an explicit Explore gate that decides whether the artifact is ready for
+  assessment;
+- a `gaia-evidence assess --exploration ... --focus ...` handoff and matching
+  assessment context schema;
+- focus-aware deep-dive turns, so frontier expansion serves a chosen focus
+  rather than only the global open frontier.
+
 ## 0. Gaia-side 独立推进定位
 
 近期讨论里出现了一个相邻但不同的产品方向：建设一个可分发的
