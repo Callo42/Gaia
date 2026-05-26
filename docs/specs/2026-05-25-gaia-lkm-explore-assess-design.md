@@ -4,9 +4,13 @@
 >
 > **Date:** 2026-05-25
 >
+> **Updated:** 2026-05-26
+>
 > **Scope:** `gaia-lkm-explore`, its handoff to `gaia-evidence assess`,
 > and the first two stages of the larger Gaia research loop:
-> `Explore -> Assess -> Propose -> Discover -> Merge`.
+> `Explore -> Assess -> Propose -> Discover -> Merge`. This revision also
+> defines the Gaia-side independent MVP that can later be wrapped by an
+> external Scientific Agent CLI/TUI harness.
 
 ## Proposal: 细化 Gaia 研究闭环中的 Explore 与 Assess
 
@@ -42,6 +46,45 @@ Explore -> Assess
 - Evidence assessment 应该从哪里接手？
 - Explore 和 Assess 之间的 typed artifact 应该长什么样？
 - 这两步如何给后面的 `Propose -> Discover -> Merge` 提供干净输入？
+- Gaia 这边应该先独立开发哪一层，才能以后被外部 agent harness 稳定调用？
+
+## 0. Gaia-side 独立推进定位
+
+近期讨论里出现了一个相邻但不同的产品方向：建设一个可分发的
+Scientific Agent CLI/TUI，让 agent 通过本地安装、登录认证、dry run、权限
+gate、telemetry、审计日志和轨迹回放，主动把实验室环境改造成 agent-ready
+CLI。这个方向很重要，但它不应该成为 Gaia 第一阶段的开发范围。
+
+Gaia 这边第一阶段要独立做的是 **Research Loop Core**：
+
+```text
+agent / human / future TUI
+  -> calls Gaia/LKM commands
+  -> exchanges typed artifacts
+  -> receives auditable research next steps
+```
+
+也就是说，Gaia 暂时不做外层 agent 产品，不做 TUI，不做公司级账号、遥测、
+灰度发布或真实实验室设备接入。Gaia 负责提供稳定的科研语义内核：
+
+- 把开放研究问题变成 evidence landscape 和 candidate foci；
+- 对某个 focus 做 evidence assessment，诊断矛盾与 gap；
+- 产出可审计的 artifact，供下一步 proposal / discovery / merge 使用；
+- 让外部 agent 只需要按 contract 读写 artifact、调用 CLI，就能接入 Gaia。
+
+这个边界能让 Gaia 和未来的 Scientific Agent CLI/TUI 互补：
+
+```text
+Scientific Agent harness:
+  Plan / Edit / Execute / Review UI, auth, telemetry, operational gates,
+  environment refactoring, Lab CLI scaffold.
+
+Gaia Research Loop Core:
+  research semantics, LKM retrieval, evidence landscape, assessment,
+  belief updates, audit artifacts, registry / LKM handoff.
+```
+
+因此本 spec 的 MVP 不包含 agent harness 本体，而是把 Gaia/LKM 的后端协议先做稳。
 
 ## 1. 为什么需要重新拆前两步
 
@@ -295,6 +338,21 @@ Gate 不问“结论对不对”，只问：
 
 这个 artifact 是 Explore 交给 Assess 的正式接口。
 
+它同时是外部 agent harness 接 Gaia 的第一层稳定接口。外部 harness 可以负责
+把用户目标、实验日志、Lab CLI 输出或人工决策整理成输入；Gaia 只承诺消费和
+生产 typed artifacts。第一版必须优先稳定下面这些字段，而不是追求 retrieval
+或 classification 算法一步到位：
+
+- `schema` / `kind` / `id`：让外部系统能做版本判断和路由。
+- `inputs`：记录 seed、scope、调用参数和上游来源。
+- `artifacts`：只放可复现路径或结构化 payload，不放 prompt-only 状态。
+- `provenance`：记录 query、LKM result、paper/artifact id、Gaia graph source。
+- `audit`：记录 coverage、known limitations、gate status、allowed next steps。
+- `interface`：记录下游可调用命令，例如 `gaia-evidence assess --exploration ...`。
+
+因此第一版 artifact 可以比最终 schema 小，但不能是临时日志；它必须能被
+`gaia-evidence assess`、脚本和未来 TUI 作为同一个 contract 使用。
+
 ## 6. Assess 应该怎么接
 
 Assess 不应该重新从自然语言问题开始，也不应该直接吞完整 raw frontier。
@@ -360,7 +418,9 @@ Assess 输出：
 
 ```json
 {
+  "schema": "gaia.sop.artifact.v1",
   "kind": "evidence_assessment",
+  "id": "assess-001",
   "origin": "lkm_exploration",
   "focus": {},
   "evidence_pool": [],
@@ -368,7 +428,11 @@ Assess 输出：
   "gap_map": [],
   "next_tests": [],
   "promotion_suggestions": [],
-  "audit": {}
+  "audit": {
+    "coverage": {},
+    "known_limitations": [],
+    "allowed_next_steps": ["propose"]
+  }
 }
 ```
 
@@ -578,11 +642,81 @@ self-hosted option reduces vendor lock-in but increases operational burden
 
 然后 Propose 可以产出最小 PoC 或 benchmark plan。
 
-## 11. 最小实现路线
+## 11. Gaia Research Loop Core MVP
 
-### Phase 0: Instrument 当前 explore
+最小版本不要一次做完整闭环，也不要先做外层 agent 产品。第一阶段只做
+Gaia/LKM 后端协议和前两步能力，让外部 agent 或人类用户能按同一条命令链调用。
 
-先补齐当前流程记录：
+MVP 名称：
+
+```text
+Gaia Explore/Assess Artifact MVP
+```
+
+MVP 命令链：
+
+```bash
+gaia-lkm-explore scope ./topic-gaia --seed "..."
+gaia-lkm-explore landscape ./topic-gaia
+gaia-lkm-explore foci ./topic-gaia
+gaia-lkm-explore artifact ./topic-gaia
+gaia-lkm-explore gate ./topic-gaia
+
+gaia-evidence assess \
+  --exploration ./topic-gaia/.gaia/exploration/artifact.json \
+  --focus tension:<id> \
+  --out ./runs/assess-001
+```
+
+MVP 交付物：
+
+- `exploration_scope.json`
+- `landscape.json`
+- `candidate_foci.json`
+- `lkm_exploration.artifact.json`
+- `explore_gate_report.json`
+- `assessment_context.json`
+- `evidence_assessment.artifact.json`
+- 一份 “external agent integration” 文档，说明外部 harness 只需调用哪些命令、读写哪些 artifact。
+
+不在 MVP 范围内：
+
+- 自研 TUI / desktop / VSCode plugin；
+- 公司级 auth、telemetry、灰度发布和发包系统；
+- Lab CLI scaffold 和真实实验设备接入；
+- 自动执行实验或自动回写 LKM；
+- 完整的 `Propose -> Discover -> Merge` 实现。
+
+这些能力属于 Scientific Agent harness 或后续 Gaia 阶段。MVP 只保证：一个
+agent 可以把 Gaia 当作 research loop backend 调用。
+
+## 12. 实现路线
+
+### Phase 0: 固定 artifact contract
+
+先实现 schema 和读写位置，不追求算法完美：
+
+```text
+.gaia/exploration/scope.json
+.gaia/exploration/landscape.json
+.gaia/exploration/foci.json
+.gaia/exploration/artifact.json
+.gaia/exploration/gate_report.json
+runs/<id>/assessment_context.json
+runs/<id>/assessment.artifact.json
+```
+
+contract 必须包含：
+
+- `schema` / `kind` / `id`；
+- `inputs` / `provenance`；
+- `artifacts`；
+- `audit.coverage` / `audit.known_limitations` / `audit.allowed_next_steps`；
+- gate status 和人类可读的 failure reasons。
+
+### Phase 1: Instrument 当前 explore
+
+在现有 `gaia-lkm-explore` 上补齐可复现记录：
 
 - query plan；
 - raw hits；
@@ -595,21 +729,8 @@ self-hosted option reduces vendor lock-in but increases operational burden
 - user decisions；
 - failure / timeout。
 
-目的：量化检索效率、claim 转化率、frontier 噪声。
-
-### Phase 1: 定义 Explore artifact schema
-
-先实现：
-
-```text
-exploration_scope.json
-landscape.json
-candidate_foci.json
-lkm_exploration.artifact.json
-explore_gate_report.json
-```
-
-这些 contract 比算法更重要。
+目的：让 artifact 的 provenance 有真实来源，也量化检索效率、claim 转化率和
+frontier 噪声。
 
 ### Phase 2: 做 breadth-first landscape
 
@@ -622,6 +743,8 @@ explore_gate_report.json
 - 输出 landscape；
 - 暂时不 deep pull。
 
+这一步的成功标准是 paper/artifact-level landscape，而不是 claim-level 深挖。
+
 ### Phase 3: 做 foci / obligation mapper
 
 从 landscape 和已有 Gaia graph 生成：
@@ -631,7 +754,8 @@ explore_gate_report.json
 - open obligations；
 - recommended assess foci。
 
-初期可以 LLM-assisted，后面加 domain templates。
+初期可以 LLM-assisted，后面加 domain templates。每个 focus 必须带 provenance，
+不能只是自然语言猜测。
 
 ### Phase 4: 打通 Assess handoff
 
@@ -642,7 +766,9 @@ explore_gate_report.json
 --focus <focus-id>
 ```
 
-并生成标准 assessment context。
+并生成标准 assessment context，再输出 `evidence_assessment.artifact.json`。
+第一版 assessment 可以是 conservative summary + gap/next-test mapper，不需要
+一次完成完整 scientific reviewer。
 
 ### Phase 5: 把现有 turn 改成 focus-aware
 
@@ -654,27 +780,16 @@ gaia-lkm-explore turn ./topic-gaia --focus <focus-id>
 
 这样 deep dive 服务某个 focus，而不是在全局 frontier 里漂移。
 
-## 12. MVP
-
-最小版本不要一次做完整闭环。
-
-只做前两步的接口打通：
-
-```text
-gaia-lkm-explore landscape
-gaia-lkm-explore foci
-gaia-lkm-explore artifact
-gaia-evidence assess --exploration ... --focus ...
-```
-
-验收标准：
+## 13. MVP 验收标准
 
 - Explore 能生成 paper/artifact-level landscape。
-- Explore 能暴露 candidate tensions/gaps。
+- Explore 能暴露 candidate tensions/gaps，并为每个 focus 记录 provenance。
+- `gaia-lkm-explore gate` 能判断 artifact 是否足够交给 Assess。
 - Assess 能消费 focus，而不是从头搜。
-- Assess 能输出 gap_map / next_tests，供 Propose 使用。
+- Assess 能输出 `gap_map` / `next_tests`，供 Propose 使用。
+- 外部 agent 可以只靠命令链和 artifact contract 接入，不需要理解 Gaia 内部数据结构。
 
-## 13. 一句话定位
+## 14. 一句话定位
 
 这份 proposal 是大闭环：
 
@@ -682,8 +797,8 @@ gaia-evidence assess --exploration ... --focus ...
 Explore -> Assess -> Propose -> Discover -> Merge
 ```
 
-中前两步的细化设计。
+中前两步的细化设计，也是 Gaia 侧可独立开发的 Research Loop Core MVP。
 
 它建议把 `gaia-lkm-explore` 定位为真正的 Explore 模块：负责建立 landscape、暴露 foci、生成 typed exploration artifact；把 Evidence Assessment 定位为第二步：负责围绕 focus 诊断证据、解释矛盾、生成 gap_map 和 next_tests。
 
-这样后面的 Propose / Discover / Merge 就不再面对散乱搜索结果，而是面对经过 Explore 和 Assess 整理过的、可审计的研究问题。
+这样后面的 Propose / Discover / Merge 就不再面对散乱搜索结果，而是面对经过 Explore 和 Assess 整理过的、可审计的研究问题；未来外部 Scientific Agent CLI/TUI 也可以把 Gaia 当作稳定 research backend，而不是侵入 Gaia 内部实现。
