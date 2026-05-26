@@ -69,7 +69,7 @@ The remaining proposal should therefore be read as the next layer on top of
 that baseline, not as a replacement for it. The main missing pieces are:
 
 - a first-class `scope` artifact rather than ad hoc seed text;
-- a `foci` / obligation artifact that turns landscape findings into assessment
+- a `focuses` / obligation artifact that turns landscape findings into assessment
   targets;
 - a standard `lkm_exploration` artifact envelope with provenance and gate
   status;
@@ -99,7 +99,7 @@ agent / human / future TUI
 也就是说，Gaia 暂时不做外层 agent 产品，不做 TUI，不做公司级账号、遥测、
 灰度发布或真实实验室设备接入。Gaia 负责提供稳定的科研语义内核：
 
-- 把开放研究问题变成 evidence landscape 和 candidate foci；
+- 把开放研究问题变成 evidence landscape 和 candidate focuses（候选分析焦点）；
 - 对某个 focus 做 evidence assessment，诊断矛盾与 gap；
 - 产出可审计的 artifact，供下一步 proposal / discovery / merge 使用；
 - 让外部 agent 只需要按 contract 读写 artifact、调用 CLI，就能接入 Gaia。
@@ -306,7 +306,7 @@ Assess
 
 ```json
 {
-  "candidate_foci": [
+  "candidate_focuses": [
     {
       "kind": "tension",
       "text": "MI risk reduction vs no clear mortality benefit",
@@ -335,7 +335,7 @@ Explore 结束时要过一个 gate，判断它是否适合交给 Assess。
 Gate 不问“结论对不对”，只问：
 
 - 是否覆盖主要 evidence/model family？
-- candidate foci 是否有 provenance？
+- candidate focuses 是否有 provenance？
 - 是否区分了 paper-level landscape 和 claim-level details？
 - 是否暴露了 candidate contradictions / gaps / obligations？
 - 是否避免把 retrieval score 当作 confidence？
@@ -355,7 +355,7 @@ Gate 不问“结论对不对”，只问：
   },
   "artifacts": {
     "landscape": {},
-    "candidate_foci": [],
+    "candidate_focuses": [],
     "exploration_graph": ".gaia/exploration/map.json",
     "gaia_ir": ".gaia/ir.json",
     "beliefs": ".gaia/beliefs.json"
@@ -550,7 +550,7 @@ gaia-lkm-explore status
 ```bash
 gaia-lkm-explore scope ./topic-gaia --seed "..."
 gaia-lkm-explore landscape ./topic-gaia --from-scope scope.json
-gaia-lkm-explore foci ./topic-gaia --from-landscape landscape.json
+gaia-lkm-explore focuses ./topic-gaia --from-landscape landscape.json
 gaia-lkm-explore artifact ./topic-gaia
 gaia-lkm-explore gate ./topic-gaia
 ```
@@ -559,7 +559,7 @@ gaia-lkm-explore gate ./topic-gaia
 
 - `scope`：生成或修订 exploration scope。
 - `landscape`：breadth-first 建 evidence/model landscape。
-- `foci`：生成 candidate tensions / gaps / obligations。
+- `focuses`：生成 candidate tensions / gaps / obligations as assessment focuses。
 - `artifact`：导出标准 `lkm_exploration` artifact。
 - `gate`：检查是否可以交给 `gaia-evidence assess`。
 
@@ -574,7 +574,7 @@ gaia-lkm-explore turn ./topic-gaia --focus <focus-id>
 也就是：
 
 ```text
-landscape-aware foci
+landscape-aware focuses
   -> selected focus
   -> targeted frontier expansion
   -> materialize relevant claims
@@ -594,7 +594,7 @@ Explore 建 landscape：
 - subgroup：older adults、diabetes、高 ASCVD risk；
 - benefit-harm model。
 
-Explore 输出 foci：
+Explore 输出 focuses：
 
 - MI 下降 vs mortality no clear benefit；
 - ischemic benefit vs major bleeding harm；
@@ -625,7 +625,7 @@ Explore 建 landscape：
 - late universe: SH0ES、TRGB、strong lensing、standard sirens；
 - model families: Lambda-CDM、early dark energy、modified gravity、N_eff。
 
-Explore 输出 foci：
+Explore 输出 focuses：
 
 - Planck inferred H0 vs SH0ES local H0；
 - Cepheid ladder vs TRGB ladder；
@@ -659,7 +659,7 @@ Explore 建 landscape：
 - pricing；
 - integration constraints。
 
-Explore 输出 foci：
+Explore 输出 focuses：
 
 - latency vs cost；
 - maturity vs flexibility；
@@ -690,7 +690,7 @@ MVP 命令链：
 ```bash
 gaia-lkm-explore scope ./topic-gaia --seed "..."
 gaia-lkm-explore landscape ./topic-gaia
-gaia-lkm-explore foci ./topic-gaia
+gaia-lkm-explore focuses ./topic-gaia
 gaia-lkm-explore artifact ./topic-gaia
 gaia-lkm-explore gate ./topic-gaia
 
@@ -704,7 +704,7 @@ MVP 交付物：
 
 - `exploration_scope.json`
 - `landscape.json`
-- `candidate_foci.json`
+- `candidate_focuses.json`
 - `lkm_exploration.artifact.json`
 - `explore_gate_report.json`
 - `assessment_context.json`
@@ -731,7 +731,7 @@ agent 可以把 Gaia 当作 research loop backend 调用。
 ```text
 .gaia/exploration/scope.json
 .gaia/exploration/landscape.json
-.gaia/exploration/foci.json
+.gaia/exploration/focuses.json
 .gaia/exploration/artifact.json
 .gaia/exploration/gate_report.json
 runs/<id>/assessment_context.json
@@ -777,14 +777,14 @@ frontier 噪声。
 
 这一步的成功标准是 paper/artifact-level landscape，而不是 claim-level 深挖。
 
-### Phase 3: 做 foci / obligation mapper
+### Phase 3: 做 focuses / obligation mapper
 
 从 landscape 和已有 Gaia graph 生成：
 
 - candidate tensions；
 - gaps；
 - open obligations；
-- recommended assess foci。
+- recommended assessment focuses。
 
 初期可以 LLM-assisted，后面加 domain templates。每个 focus 必须带 provenance，
 不能只是自然语言猜测。
@@ -831,6 +831,6 @@ Explore -> Assess -> Propose -> Discover -> Merge
 
 中前两步的细化设计，也是 Gaia 侧可独立开发的 Research Loop Core MVP。
 
-它建议把 `gaia-lkm-explore` 定位为真正的 Explore 模块：负责建立 landscape、暴露 foci、生成 typed exploration artifact；把 Evidence Assessment 定位为第二步：负责围绕 focus 诊断证据、解释矛盾、生成 gap_map 和 next_tests。
+它建议把 `gaia-lkm-explore` 定位为真正的 Explore 模块：负责建立 landscape、暴露 focuses（分析焦点）、生成 typed exploration artifact；把 Evidence Assessment 定位为第二步：负责围绕 focus 诊断证据、解释矛盾、生成 gap_map 和 next_tests。
 
 这样后面的 Propose / Discover / Merge 就不再面对散乱搜索结果，而是面对经过 Explore 和 Assess 整理过的、可审计的研究问题；未来外部 Scientific Agent CLI/TUI 也可以把 Gaia 当作稳定 research backend，而不是侵入 Gaia 内部实现。
