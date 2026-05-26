@@ -1,6 +1,9 @@
 # LKM Explore Artifact MVP Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For implementers:** Execute this plan task-by-task. Steps use checkbox
+> (`- [ ]`) syntax for tracking. Keep the implementation test-driven, make
+> small commits, and preserve backward compatibility for the existing
+> `gaia-lkm-explore` commands.
 
 **Goal:** Add typed Explore sidecar artifacts to `gaia-lkm-explore`: `scope`, `focuses`, `artifact`, and `gate`, without breaking the existing frontier-driven exploration loop.
 
@@ -11,6 +14,14 @@
 **Spec reference:** `docs/specs/2026-05-26-lkm-explore-artifact-mvp-design.md`
 
 ---
+
+## Plan Code Policy
+
+Code snippets in this plan are illustrative implementation sketches, not a
+requirement to paste verbatim. The tests, artifact contracts, command names,
+paths, side effects, and compatibility rules are normative. If production code
+diverges from a snippet while satisfying the tests and contracts, prefer the
+cleaner production code.
 
 ## File Structure
 
@@ -242,7 +253,7 @@ def build_scope_artifact(
         "id": artifact_id("scope"),
         "created_at": utcnow(),
         "inputs": {
-            "pkg": str(pkg),
+            "pkg": str(Path(pkg).resolve()),
             "seeds": list(seeds),
             "profile": profile,
             "dimensions": dimensions,
@@ -308,6 +319,7 @@ Expected: fail because command is not registered.
 In `client/verbs.py`, import:
 
 ```python
+from gaia.engine.packaging import write_text_atomic
 from gaia.lkm_explorer.engine.artifacts import (
     build_scope_artifact,
     parse_dimensions,
@@ -507,7 +519,7 @@ def build_focuses_artifact(
         "id": artifact_id("focuses"),
         "created_at": utcnow(),
         "inputs": {
-            "pkg": str(pkg),
+            "pkg": str(Path(pkg).resolve()),
             "scope": rel_artifact_path(pkg, scope_path),
             "landscape": rel_artifact_path(pkg, landscape_path),
         },
@@ -674,7 +686,7 @@ def build_exploration_artifact(
         "kind": "lkm_exploration",
         "id": artifact_id("explore"),
         "created_at": utcnow(),
-        "inputs": {"pkg": str(pkg)},
+        "inputs": {"pkg": str(Path(pkg).resolve())},
         "artifacts": {
             "scope": _maybe_rel(pkg, scope),
             "landscape": rel_artifact_path(pkg, landscape) if landscape else None,
@@ -765,12 +777,14 @@ from gaia.lkm_explorer.engine.artifacts import build_gate_report
 
 def test_gate_blocks_without_focuses():
     artifact = {
+        "schema": "gaia.sop.artifact.v1",
         "kind": "lkm_exploration",
         "artifacts": {
             "scope": ".gaia/exploration/scope.json",
             "landscape": ".gaia/exploration/landscape-0.json",
             "focuses": None,
             "map": ".gaia/exploration/map.json",
+            "artifact": ".gaia/exploration/artifact.json",
         },
     }
 
@@ -782,12 +796,17 @@ def test_gate_blocks_without_focuses():
 
 def test_gate_passes_with_evidence_backed_focus():
     artifact = {
+        "schema": "gaia.sop.artifact.v1",
         "kind": "lkm_exploration",
         "artifacts": {
             "scope": ".gaia/exploration/scope.json",
             "landscape": ".gaia/exploration/landscape-0.json",
             "focuses": ".gaia/exploration/focuses.json",
             "map": ".gaia/exploration/map.json",
+            "artifact": ".gaia/exploration/artifact.json",
+            "gaia_ir": ".gaia/ir.json",
+            "beliefs": ".gaia/beliefs.json",
+            "rounds": ".gaia/exploration/rounds.jsonl",
         },
     }
     focuses = {"focuses": [{"id": "f1", "evidence_refs": [{"kind": "x"}]}]}
@@ -796,6 +815,33 @@ def test_gate_passes_with_evidence_backed_focus():
 
     assert report["verdict"] == "pass"
     assert report["allowed_next_steps"] == ["assess"]
+
+
+def test_gate_revises_when_optional_graph_artifacts_are_missing():
+    artifact = {
+        "schema": "gaia.sop.artifact.v1",
+        "kind": "lkm_exploration",
+        "artifacts": {
+            "scope": ".gaia/exploration/scope.json",
+            "landscape": ".gaia/exploration/landscape-0.json",
+            "focuses": ".gaia/exploration/focuses.json",
+            "map": ".gaia/exploration/map.json",
+            "artifact": ".gaia/exploration/artifact.json",
+            "gaia_ir": None,
+            "beliefs": None,
+            "rounds": None,
+        },
+    }
+    focuses = {"focuses": [{"id": "f1", "evidence_refs": [{"kind": "x"}]}]}
+
+    report = build_gate_report(artifact, focuses=focuses)
+
+    assert report["verdict"] == "revise"
+    assert report["allowed_next_steps"] == []
+    assert any(
+        c["id"] == "compiled_ir_present" and c["status"] == "warn"
+        for c in report["checks"]
+    )
 ```
 
 - [ ] **Step 2: Implement `build_gate_report`**
@@ -815,9 +861,42 @@ def build_gate_report(
     """Check whether an Explore artifact is structurally ready for Assess."""
     checks = []
     artifacts = artifact.get("artifacts", {}) if isinstance(artifact, dict) else {}
-    for key in ["scope", "landscape", "focuses", "map"]:
+
+    schema_ok = artifact.get("schema") == SOP_SCHEMA
+    checks.append(
+        _check(
+            "pass" if schema_ok else "fail",
+            "schema_versions_supported",
+            "schema supported"
+            if schema_ok
+            else f"unsupported schema: {artifact.get('schema')!r}",
+        )
+    )
+
+    for key in ["scope", "landscape", "focuses", "map", "artifact"]:
         present = bool(artifacts.get(key))
-        checks.append(_check("pass" if present else "fail", f"{key}_present", f"{key} {'present' if present else 'missing'}"))
+        checks.append(
+            _check(
+                "pass" if present else "fail",
+                f"{key}_present",
+                f"{key} {'present' if present else 'missing'}",
+            )
+        )
+
+    for key, check_id in [
+        ("gaia_ir", "compiled_ir_present"),
+        ("beliefs", "beliefs_present"),
+        ("rounds", "rounds_present"),
+    ]:
+        present = bool(artifacts.get(key))
+        checks.append(
+            _check(
+                "pass" if present else "warn",
+                check_id,
+                f"{key} {'present' if present else 'missing'}",
+            )
+        )
+
     focus_rows = []
     if isinstance(focuses, dict) and isinstance(focuses.get("focuses"), list):
         focus_rows = [f for f in focuses["focuses"] if isinstance(f, dict)]
@@ -831,13 +910,19 @@ def build_gate_report(
     missing_refs = [f.get("id", "<unknown>") for f in focus_rows if not f.get("evidence_refs")]
     checks.append(
         _check(
-            "pass" if not missing_refs and focus_rows else "fail",
+            "pass" if not missing_refs and focus_rows else "warn",
             "focuses_have_evidence_refs",
             "All focuses include evidence_refs." if not missing_refs and focus_rows else f"Missing refs: {missing_refs}",
         )
     )
     failed = [c for c in checks if c["status"] == "fail"]
-    verdict = "pass" if not failed else "block"
+    warned = [c for c in checks if c["status"] == "warn"]
+    if failed:
+        verdict = "block"
+    elif warned:
+        verdict = "revise"
+    else:
+        verdict = "pass"
     return {
         "schema": SOP_SCHEMA,
         "kind": "quality_gate_report",
@@ -860,7 +945,9 @@ Add `gate_command`:
 - read `.gaia/exploration/focuses.json` when present;
 - call `build_gate_report`;
 - write `.gaia/exploration/gate_report.json`;
-- print `Gate: pass|block`.
+- print `Gate: pass|revise|block`;
+- return exit code 0 for `pass` and `revise`;
+- raise `typer.Exit(1)` when verdict is `block`.
 
 Register:
 

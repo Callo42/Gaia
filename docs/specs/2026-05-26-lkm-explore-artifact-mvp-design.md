@@ -91,6 +91,11 @@ gaia-lkm-explore gate ./topic-gaia
 These commands do not mutate the existing exploration map, except that `scope`
 may read seeds from `map.json` when `--seed` is omitted.
 
+All four artifact commands support the common artifact-output flags:
+
+- `--out <path>` when the command writes a primary artifact;
+- `--json` to print the payload after writing it.
+
 ## 5. Artifact paths
 
 Canonical sidecar files:
