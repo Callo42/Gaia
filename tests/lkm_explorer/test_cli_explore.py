@@ -675,6 +675,32 @@ def test_explore_focuses_requires_landscape(galileo_pkg: Path):
     assert "no landscape" in result.output
 
 
+def test_explore_artifact_writes_handoff_envelope(galileo_pkg: Path):
+    runner.invoke(
+        app,
+        ["init", str(galileo_pkg), "--seed", _galileo_qid("aristotle_model")],
+    )
+    runner.invoke(app, ["scope", str(galileo_pkg)])
+    runner.invoke(app, ["landscape", str(galileo_pkg), "--search-json", str(_FIXTURE)])
+    runner.invoke(app, ["focuses", str(galileo_pkg)])
+
+    result = runner.invoke(app, ["artifact", str(galileo_pkg)])
+
+    assert result.exit_code == 0, result.output
+    assert "Artifact:" in result.output
+    assert "gaia-evidence assess" in result.output
+    payload = json.loads(
+        (galileo_pkg / ".gaia" / "exploration" / "artifact.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert payload["kind"] == "lkm_exploration"
+    assert payload["artifacts"]["scope"] == ".gaia/exploration/scope.json"
+    assert payload["artifacts"]["focuses"] == ".gaia/exploration/focuses.json"
+    assert payload["artifacts"]["artifact"] == ".gaia/exploration/artifact.json"
+    assert payload["interface"]["assess"]["command"].startswith("gaia-evidence assess")
+
+
 def test_explore_observe_dedups_and_skips_materialized(galileo_pkg: Path):
     runner.invoke(
         app,

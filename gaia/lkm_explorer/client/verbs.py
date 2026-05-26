@@ -56,10 +56,12 @@ from gaia.engine.inquiry.focus import resolve_focus_target
 from gaia.engine.inquiry.review import resolve_graph
 from gaia.engine.packaging import write_text_atomic
 from gaia.lkm_explorer.engine.artifacts import (
+    build_exploration_artifact,
     build_focuses_artifact,
     build_scope_artifact,
     latest_landscape_path,
     parse_dimensions,
+    rel_artifact_path,
 )
 from gaia.lkm_explorer.engine.discoveries import compute_discoveries
 from gaia.lkm_explorer.engine.frontier import (
@@ -197,6 +199,11 @@ _FOCUSES_OUT_OPT = typer.Option(
     None,
     "--out",
     help="Output JSON path (default <pkg>/.gaia/exploration/focuses.json).",
+)
+_ARTIFACT_OUT_OPT = typer.Option(
+    None,
+    "--out",
+    help="Output JSON path (default <pkg>/.gaia/exploration/artifact.json).",
 )
 _OBSERVE_SOURCE_OPT = typer.Option(
     None,
@@ -1074,6 +1081,46 @@ def focuses_command(
 
     typer.echo(f"Focuses: {len(payload['focuses'])} focus(es) from {landscape_path}.")
     typer.echo(f"Output: {output_path}")
+    if json_out:
+        typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
+
+
+# --------------------------------------------------------------------------- #
+# artifact                                                                    #
+# --------------------------------------------------------------------------- #
+
+
+def artifact_command(
+    pkg: str = _PKG_ARG,
+    out: str | None = _ARTIFACT_OUT_OPT,
+    json_out: bool = _LANDSCAPE_JSON_OPT,
+) -> None:
+    r"""Write the Explore handoff envelope for downstream evidence assessment."""
+    map_path = _gaia_dir(pkg) / "exploration" / "map.json"
+    if not map_path.exists():
+        typer.echo(
+            f"Error: no exploration map at {pkg}; run `gaia-lkm-explore init` first.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    exploration_map = load_map(pkg)
+    output_path = (
+        Path(out) if out is not None else _gaia_dir(pkg) / "exploration" / "artifact.json"
+    )
+    payload = build_exploration_artifact(
+        pkg,
+        map_round=exploration_map.round,
+        map_version=exploration_map.version,
+    )
+    payload["artifacts"]["artifact"] = rel_artifact_path(pkg, output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    write_text_atomic(output_path, json.dumps(payload, ensure_ascii=False, indent=2))
+
+    limitations = payload["audit"]["known_limitations"]
+    typer.echo(f"Artifact: {len(limitations)} known limitation(s).")
+    typer.echo(f"Output: {output_path}")
+    typer.echo(f"Assess: {payload['interface']['assess']['command']}")
     if json_out:
         typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
 

@@ -35,6 +35,7 @@ from gaia.lkm_explorer.client.orchestrator import (
     run_turn,
 )
 from gaia.lkm_explorer.client.verbs import (
+    artifact_command,
     focuses_command,
     frontier_command,
     init_command,
@@ -65,6 +66,7 @@ app.command(name="scope")(scope_command)
 app.command(name="observe")(observe_command)
 app.command(name="landscape")(landscape_command)
 app.command(name="focuses")(focuses_command)
+app.command(name="artifact")(artifact_command)
 app.command(name="frontier")(frontier_command)
 app.command(name="round")(round_command)
 app.command(name="status")(status_command)
