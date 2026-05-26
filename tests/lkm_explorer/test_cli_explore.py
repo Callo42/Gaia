@@ -701,6 +701,54 @@ def test_explore_artifact_writes_handoff_envelope(galileo_pkg: Path):
     assert payload["interface"]["assess"]["command"].startswith("gaia-evidence assess")
 
 
+def test_explore_gate_blocks_without_focuses(galileo_pkg: Path):
+    runner.invoke(
+        app,
+        ["init", str(galileo_pkg), "--seed", _galileo_qid("aristotle_model")],
+    )
+    runner.invoke(app, ["scope", str(galileo_pkg)])
+    runner.invoke(app, ["landscape", str(galileo_pkg), "--search-json", str(_FIXTURE)])
+    runner.invoke(app, ["artifact", str(galileo_pkg)])
+
+    result = runner.invoke(app, ["gate", str(galileo_pkg)])
+
+    assert result.exit_code == 1
+    assert "Gate: block" in result.output
+    payload = json.loads(
+        (galileo_pkg / ".gaia" / "exploration" / "gate_report.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert payload["verdict"] == "block"
+    assert payload["checks"]["focuses_present"]["status"] == "fail"
+
+
+def test_explore_gate_passes_with_complete_assessable_artifacts(galileo_pkg: Path):
+    runner.invoke(
+        app,
+        ["init", str(galileo_pkg), "--seed", _galileo_qid("aristotle_model")],
+    )
+    runner.invoke(app, ["scope", str(galileo_pkg)])
+    runner.invoke(app, ["landscape", str(galileo_pkg), "--search-json", str(_FIXTURE)])
+    runner.invoke(app, ["focuses", str(galileo_pkg)])
+    (galileo_pkg / ".gaia" / "exploration" / "rounds.jsonl").write_text(
+        "{}\n", encoding="utf-8"
+    )
+    runner.invoke(app, ["artifact", str(galileo_pkg)])
+
+    result = runner.invoke(app, ["gate", str(galileo_pkg)])
+
+    assert result.exit_code == 0, result.output
+    assert "Gate: pass" in result.output
+    payload = json.loads(
+        (galileo_pkg / ".gaia" / "exploration" / "gate_report.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert payload["verdict"] == "pass"
+    assert payload["audit"]["allowed_next_steps"] == ["assess"]
+
+
 def test_explore_observe_dedups_and_skips_materialized(galileo_pkg: Path):
     runner.invoke(
         app,

@@ -58,6 +58,7 @@ from gaia.engine.packaging import write_text_atomic
 from gaia.lkm_explorer.engine.artifacts import (
     build_exploration_artifact,
     build_focuses_artifact,
+    build_gate_report,
     build_scope_artifact,
     latest_landscape_path,
     parse_dimensions,
@@ -204,6 +205,11 @@ _ARTIFACT_OUT_OPT = typer.Option(
     None,
     "--out",
     help="Output JSON path (default <pkg>/.gaia/exploration/artifact.json).",
+)
+_GATE_OUT_OPT = typer.Option(
+    None,
+    "--out",
+    help="Output JSON path (default <pkg>/.gaia/exploration/gate_report.json).",
 )
 _OBSERVE_SOURCE_OPT = typer.Option(
     None,
@@ -1123,6 +1129,71 @@ def artifact_command(
     typer.echo(f"Assess: {payload['interface']['assess']['command']}")
     if json_out:
         typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
+
+
+# --------------------------------------------------------------------------- #
+# gate                                                                        #
+# --------------------------------------------------------------------------- #
+
+
+def _build_and_write_exploration_artifact(pkg: str, output_path: Path) -> dict[str, Any]:
+    exploration_map = load_map(pkg)
+    payload = build_exploration_artifact(
+        pkg,
+        map_round=exploration_map.round,
+        map_version=exploration_map.version,
+    )
+    payload["artifacts"]["artifact"] = rel_artifact_path(pkg, output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    write_text_atomic(output_path, json.dumps(payload, ensure_ascii=False, indent=2))
+    return payload
+
+
+def _resolve_pkg_artifact_path(pkg: str, ref: Any) -> Path | None:
+    if not isinstance(ref, str) or not ref:
+        return None
+    path = Path(ref)
+    return path if path.is_absolute() else Path(pkg).resolve() / path
+
+
+def gate_command(
+    pkg: str = _PKG_ARG,
+    out: str | None = _GATE_OUT_OPT,
+    json_out: bool = _LANDSCAPE_JSON_OPT,
+) -> None:
+    r"""Check whether Explore artifacts are ready for evidence assessment."""
+    map_path = _gaia_dir(pkg) / "exploration" / "map.json"
+    if not map_path.exists():
+        typer.echo(
+            f"Error: no exploration map at {pkg}; run `gaia-lkm-explore init` first.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    artifact_path = _gaia_dir(pkg) / "exploration" / "artifact.json"
+    if artifact_path.exists():
+        artifact = _read_json_object(artifact_path)
+    else:
+        artifact = _build_and_write_exploration_artifact(pkg, artifact_path)
+
+    focuses_path = _resolve_pkg_artifact_path(pkg, artifact.get("artifacts", {}).get("focuses"))
+    if focuses_path is None:
+        focuses_path = _gaia_dir(pkg) / "exploration" / "focuses.json"
+    focuses = _read_json_object(focuses_path) if focuses_path.exists() else None
+
+    report = build_gate_report(artifact, focuses)
+    output_path = (
+        Path(out) if out is not None else _gaia_dir(pkg) / "exploration" / "gate_report.json"
+    )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    write_text_atomic(output_path, json.dumps(report, ensure_ascii=False, indent=2))
+
+    typer.echo(f"Gate: {report['verdict']}")
+    typer.echo(f"Output: {output_path}")
+    if json_out:
+        typer.echo(json.dumps(report, ensure_ascii=False, indent=2))
+    if report["verdict"] == "block":
+        raise typer.Exit(1)
 
 
 # --------------------------------------------------------------------------- #
