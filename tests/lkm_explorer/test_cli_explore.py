@@ -640,7 +640,12 @@ def test_explore_scope_rejects_invalid_dimension(galileo_pkg: Path):
 
 
 def test_explore_scope_help_lists_options():
-    result = runner.invoke(app, ["scope", "--help"])
+    result = runner.invoke(
+        app,
+        ["scope", "--help"],
+        color=False,
+        terminal_width=200,
+    )
 
     assert result.exit_code == 0, result.output
     assert "--seed" in result.output
