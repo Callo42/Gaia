@@ -76,7 +76,7 @@ The methodology below leans on this fixed set of CLI calls. Drill into `gaia <gr
   - `gaia author claim` — declare a `claim(...)` knowledge node (use when first surfacing a proposition).
   - `gaia author note` — declare a `note(...)` background statement (use for mathematical definitions, formal setups, fundamental principles).
   - `gaia author question` — declare a `question(...)` research question.
-  - `gaia author derive --conclusion ... --given ...` — author a directed implication: premises rigidly support the conclusion. Carry `--rationale` for the natural-language justification; express residual warrant uncertainty by `gaia author register-prior` against the derive's labelled output Claim (or its auto-generated warrant helper).
+  - `gaia author derive --conclusion ... --given ...` — author a directed implication: premises rigidly support the conclusion. Carry `--rationale` for the natural-language justification; relation quality is reviewed through the rationale and gate workflow, not through a prior on the derived conclusion or helper.
   - `gaia author infer --evidence ... --hypothesis ... --p-e-given-h ...` — author a Bayesian update on new evidence; the `--p-e-given-h` likelihood is required, `--p-e-given-not-h` defaults to 0.5.
   - `gaia author observe --conclusion ... [--value ... --error ...]` — author a measurement event tied to a Claim, Variable, or Distribution.
   - `gaia author compute --conclusion-type ... --fn ... --given ...` — author a deterministic-computation step (a named callable produces the result Claim).
@@ -202,7 +202,7 @@ gaia build check <pkg> --show label    # detail view of a specific claim's warra
 | Marking a questionable proposition as `note` | That proposition cannot be updated via BP | When in doubt, mark as `claim`; only mathematical definitions are `note`s |
 | Marking a condition-dependent theoretical framework as `note` | Framework does not participate in BP | Condition-dependent conclusions should be claims |
 | Using `derive` for a Bayesian update | Loses the explicit P(E\|H) / P(E\|~H) the source supplied | Use `infer` with `--p-e-given-h` and `--p-e-given-not-h` |
-| Using `infer` for a step-by-step deterministic derivation | Forces a Bayesian update where rigid implication is the source's framing | Use `derive` (with optional `register_prior` against the derive's labelled output for residual warrant uncertainty) |
+| Using `infer` for a step-by-step deterministic derivation | Forces a Bayesian update where rigid implication is the source's framing | Use `derive` with a detailed `rationale`; do not add a prior to the derived conclusion or helper |
 | Using `derive` for a numerical computation whose function is in code | Loses the deterministic-mapping framing | Use `compute --fn ...` with the named callable |
 | Anonymous relation (no `--dsl-binding-name`) | Relation invisible in `gaia build check --brief`, cannot be reviewed | Assign via `--dsl-binding-name <name> --label <name>` |
 | `_`-prefixed claim or relation | Node invisible in CLI output, gets no label | Use public names (no `_` prefix); only `__` is reserved for compiler |
@@ -240,6 +240,6 @@ Shared with `gaia-formalize-coarse`; loaded by the passes that need them:
 ### Sibling skills
 
 - [`../gaia-formalize-coarse/SKILL.md`](../gaia-formalize-coarse/SKILL.md) — the quick four-phase single-pass sibling, for a fast first cut of one paper.
-- [`../gaia-review/SKILL.md`](../gaia-review/SKILL.md) — prior-assignment guide (evidence-level → prior-range tables, warrant priors, π(Alt) explanatory-power semantics, iteration loop).
+- [`../gaia-review/SKILL.md`](../gaia-review/SKILL.md) — prior-assignment guide for independent leaf claims (evidence-level → prior-range tables, π(Alt) explanatory-power semantics, iteration loop).
 - [`../gaia-publish/SKILL.md`](../gaia-publish/SKILL.md) — README narrative discipline after `gaia run render --target github`.
 - [`../gaia-obsidian-wiki/SKILL.md`](../gaia-obsidian-wiki/SKILL.md) — rich Obsidian-vault discipline after `gaia run render --target obsidian`.

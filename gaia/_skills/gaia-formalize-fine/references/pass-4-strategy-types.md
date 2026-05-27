@@ -10,7 +10,7 @@ Passes 2-3 produce a graph dominated by `infer` (the general fall-back). Pass 4 
 
 | Verb | Semantics | When to use | Author-side cost |
 |----------|-----------|-------------|--------------|
-| `derive` | Directed implication: premises jointly support conclusion | Step-by-step derivations, theoretical results read off a formal framework, computation-application chains | `register_prior` against the derive's labelled output (or its warrant helper) for residual uncertainty |
+| `derive` | Directed implication: premises jointly support conclusion | Step-by-step derivations, theoretical results read off a formal framework, computation-application chains | Detailed `rationale`; review / gate checks judge relation quality |
 | `infer` | Bayesian update: explicit P(E\|H), optional P(E\|~H) | Theory-vs-experiment fit, single-evidence updates to a hypothesis | `--p-e-given-h` (required), `--p-e-given-not-h` (defaults 0.5) |
 | `compute` | Deterministic mapping: callable `fn` produces conclusion from premises | Closed-form computations where the function is in code | `--fn` identifier of a callable; conclusion is the function's output Claim |
 | `observe` | Measurement event tying Claim / Variable / Distribution to data | Experimental observations that anchor the graph | `--value` / `--error` for quantity form, or discrete observation against a premise list |
@@ -38,7 +38,7 @@ For each `infer` relation drafted in Pass 2:
         NO  ↓
     Does the source present this as a deterministic step-by-step derivation that, given the premises,
     is the intended way to reach the conclusion (with at most residual numerical or approximation uncertainty)?
-        YES → derive   (optionally register_prior against the derive's labelled output for warrant uncertainty)
+        YES → derive   (write the residual caveats in `rationale`; do not add a prior to the derived conclusion/helper)
         NO  ↓
     Is this a Bayesian update where the evidence's likelihood under hypothesis and under its negation
     is what carries the inferential weight (e.g. theory predicts X, experiment measured X')?
@@ -58,9 +58,9 @@ For each `infer` relation drafted in Pass 2:
 
 The release/0.4 SKILL talked about several named reasoning patterns. Several have clean v0.5 idioms; some do not. Be honest about the gap.
 
-**Strict mathematical deduction** ("if all premises true, conclusion necessarily true"): use `derive` and omit the warrant prior (or set it very close to 1). `derive` carries the same skeleton (conjunction + directed implication); leaving the warrant near 1 expresses determinism. There is no separate "deduction" verb in v0.5.
+**Strict mathematical deduction** ("if all premises true, conclusion necessarily true"): use `derive` and make the `rationale` explicit enough for review. `derive` carries the conjunction + directed-implication skeleton. There is no separate "deduction" verb in v0.5.
 
-**Soft / probabilistic support** ("premises usually imply the conclusion, with uncertainty"): use `derive` for the relation, then reach for `gaia author register-prior --claim <warrant_label> --value ... --justification ...` against the `derive`'s labelled output Claim (or its auto-generated warrant helper) to express the residual uncertainty (numerical methods, approximations, omitted conditions). The engine's `derive(...)` signature does not accept an inline `prior=` — warrant priors are attached via `register_prior`.
+**Soft / probabilistic support** ("premises usually imply the conclusion, with uncertainty"): prefer `infer` when the source supplies likelihood-style evidence. If the source frames the step as a derivation with residual caveats, use `derive` and spell those caveats out in `rationale`; review / gate checks judge whether the step is acceptable. Do not express reasoning-step uncertainty by adding a prior to the derived conclusion or to a generated helper.
 
 **Theory-experiment comparison ("abduction")**: extract the theoretical prediction and the experimental observation as separate claims (Pass 1), then use `infer(evidence=obs, hypothesis=pred, --p-e-given-h ...)`. When several alternative theories compete, chain `infer` against each candidate hypothesis with its own likelihoods. When the alternatives are mutually exclusive in the paper's framing, add `exclusive(a, b)` for the two-alternative case or `decompose --formula-template or` for three or more (`exclusive` is strictly binary). The abduction *concept* — the prior on the alternative reflects explanatory power for the specific observation, not the alternative's truth in general — survives intact; that deep guide lives in `../../gaia-review/SKILL.md`.
 
@@ -71,13 +71,13 @@ The release/0.4 SKILL talked about several named reasoning patterns. Several hav
 - *Process of elimination:* `decompose --formula-template or` over the exhaustive option set + `derive(survivor, given=[evidence_eliminating_alt_1, evidence_eliminating_alt_2, ...])`. The disjunctive decomposition guarantees the survivor must be the one true option; the `derive` carries the per-alternative refutation reasoning. (`exclusive(a, b)` is strictly binary — exactly two options — so it only fits the n=2 case; for n≥3 alternatives use `decompose --formula-template or`.)
 - *Proof by cases:* one `derive(conclusion, given=[case_k_premise, conclusion_holds_in_case_k])` per case, plus a `decompose --formula-template or` over the case predicates (or `exclusive(a, b)` when there are exactly two cases — `exclusive` is binary only).
 - *Mathematical induction:* one `derive` for the base case, one `derive` for the inductive step (`P(n) ⇒ P(n+1)`), and a `derive(for_all_law, given=[base_case, inductive_step])` whose rationale references the inductive schema. **The engine does not enforce the inductive schema** — it treats this as a generic two-premise `derive`. The author must carry the "this is induction over N" framing in the `rationale` text, and the Pass 5 reviewer must verify the base case + step actually warrant the universal. Do not assume the engine guarantees the quantifier reasoning.
-- *Analogy* and *extrapolation:* author the structural-similarity / continuity premise as a `claim`, then `derive(target, given=[source, similarity_premise])` or `derive(extrapolated, given=[measured_range_result, continuity_premise])`. The justification quality lives in the premise prior plus the `derive` warrant prior — see `../../gaia-review/SKILL.md`.
+- *Analogy* and *extrapolation:* author the structural-similarity / continuity premise as a `claim`, then `derive(target, given=[source, similarity_premise])` or `derive(extrapolated, given=[measured_range_result, continuity_premise])`. The justification quality lives in the leaf-prior calibration for the similarity / continuity premise plus the relation `rationale` and review outcome — see `../../gaia-review/SKILL.md`.
 
 If your source has a derivation that does not map cleanly onto any of these idioms, that is signal: capture the gap in `ANALYSIS.md` under "unmodelled reasoning" so a reviewer can examine it.
 
 ### Strategy variable naming
 
-Every relation that produces a Claim or warrant **must** be assigned to a named public variable (no `_` prefix). This is required so that the relation appears in `gaia build check --brief` output and can be referenced by `priors.py` and downstream verbs.
+Every relation that produces a Claim or helper **must** be assigned to a named public variable (no `_` prefix). This is required so that the relation appears in `gaia build check --brief` output and can be referenced by downstream verbs.
 
 When using `gaia author <verb>`, set `--dsl-binding-name` (Python LHS) and `--label` (engine `label=` kwarg) together for any relation that needs to be cited downstream. Use descriptive names like `derive_tc_al`, `compose_workflow`, `infer_theory_vs_exp`.
 

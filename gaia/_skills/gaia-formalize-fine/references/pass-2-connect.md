@@ -8,7 +8,7 @@ Pass 2 wires the knowledge graph. The default starting verb is `infer` (`gaia au
 
 For each claim "supported by other claims," choose one of these author verbs:
 
-- `gaia author derive --conclusion C --given P1,P2,...` — rigid implication: premises jointly support the conclusion. Use when the source presents a step-by-step derivation that, given the premises, is the intended way to reach the conclusion. To express warrant uncertainty (numerical methods, approximations, omitted conditions), label the `derive` with `--dsl-binding-name`/`--label` and then `gaia author register-prior --claim <warrant_label> --value ... --justification ...`.
+- `gaia author derive --conclusion C --given P1,P2,...` — rigid implication: premises jointly support the conclusion. Use when the source presents a step-by-step derivation that, given the premises, is the intended way to reach the conclusion. Put numerical-method caveats, approximations, or omitted-condition warnings in `--rationale`; review / gate checks judge whether the relation is acceptable.
 - `gaia author infer --evidence E --hypothesis H --p-e-given-h ...` — Bayesian update: explicit P(E|H) and (optional) P(E|~H). Use when the source argues "observing E updates belief in H," especially when comparing competing hypotheses against the same observation.
 - `gaia author observe --conclusion C [--value ... --error ...]` — raw measurement: ties a Claim, Variable, or Distribution to an observed value. Use for experimental measurements that anchor the graph in data.
 - `gaia author compute --conclusion-type T --fn f --given P1,P2,...` — deterministic mapping: a named callable produces the result from the premises. Use when the source presents a closed-form computation whose function is captured by code.

@@ -10,11 +10,17 @@ After Pass 6, you have a structurally complete graph and a passing `gaia build c
 
 ### Write `priors.py`
 
-`priors.py` assigns priors to leaf claims. Warrant priors on `derive` (and `infer` / `compute` where relevant) are set by `gaia author register-prior --claim <warrant_label> --value ... --justification ...` against the verb's labelled output Claim (or its auto-generated warrant helper). The engine's verb signatures do not accept an inline `prior=` kwarg — `register_prior` is the only path.
+`priors.py` assigns priors **only to independent leaf claims**: claims that are
+not produced by `derive` / `infer` / `compute` / `observe` / structural verbs.
+Use priors to express the external credibility of source facts, measurements,
+background assumptions that are modelled as claims, and alternative hypotheses.
+Do not assign priors to derived conclusions, action outputs, or generated
+helper / warrant claims. Reasoning-step acceptability belongs in the relation's
+`rationale` and the review / gate workflow, not in `priors.py`.
 
 **Before writing `priors.py`, run `gaia build check --hole .`** to see exactly which independent claims need priors, along with their content and current status. Use this as your checklist — address each hole, then re-run `gaia build check --hole .` to confirm "All independent claims have priors assigned."
 
-The CLI shortcut is:
+The CLI shortcut for a leaf claim is:
 
 ```bash
 gaia author register-prior \
@@ -24,13 +30,23 @@ gaia author register-prior \
     --file priors.py
 ```
 
-That command appends a `register_prior(...)` statement to `priors.py` and auto-injects the import if the target file is a sibling of `__init__.py`.
+That command appends a `register_prior(...)` statement to `priors.py` and
+auto-injects the import if the target file is a sibling module. Use the exact
+leaf labels reported by `gaia build check --hole`; do not invent labels for
+action helpers or generated warrants.
 
-**Do NOT set priors for derived claims.** The inference engine automatically assigns uninformative priors (0.5) to derived claims. Their beliefs are determined entirely by BP propagation from leaf premises. Setting an explicit prior on a derived claim double-counts evidence: the reviewer's judgement and the reasoning chain both reflect the same underlying data. Only set priors for independent (leaf) claims that are not the conclusion of any relation.
+**Do NOT set priors for derived claims.** Their beliefs are determined by BP
+propagation from leaf premises and the authored graph. Setting an explicit prior
+on a derived claim double-counts evidence: the reviewer judgement and the
+reasoning chain both reflect the same underlying data. Only set priors for
+independent leaf claims that are not the conclusion of any relation.
 
 **The π(Alt) discipline (`infer` alternatives) deserves special attention.** In the abductive pattern (theory-vs-experiment `infer`), the prior on the alternative reflects its **explanatory power for the specific observation**, not whether the alternative's computation is correct in general. The most common and consequential mistake in prior assignment is setting π(Alt) based on "the alternative's calculation is right," rather than "the alternative explains the observation." The deep guide — worked examples, rule-of-thumb checks, the explanatory-power-vs-correctness distinction — lives in `../../gaia-review/SKILL.md`. Read it before writing the prior on any abductive alternative.
 
-The full prior-assignment guide (evidence-level → prior-range tables, warrant-prior ranges, iteration loop) also lives in `../../gaia-review/SKILL.md`. This skill points at it; do not duplicate the tables here.
+The full prior-assignment guide for independent claims (evidence-level →
+prior-range tables and iteration loop) also lives in
+`../../gaia-review/SKILL.md`. This skill points at it; do not duplicate the
+tables here.
 
 ### Run inference
 
@@ -97,7 +113,7 @@ Vulnerability signals to capture in the "issue" column:
 | Long reasoning chain (4+ hops from leaf to conclusion) | Multiplicative effect — small uncertainties compound |
 | `infer` alternative π(Alt) ≈ π(H) | Alternative is equally plausible — evidence does not distinguish |
 | Leaf claim with low prior and many downstream dependents | Single weak foundation supporting many conclusions |
-| `derive` warrant with very low prior (< 0.3) | Reviewer flagged this step as unreliable |
+| Reviewable relation marked weak or rejected | Reviewer flagged this step as unreliable |
 | Claim marked as `note` that could be questioned | Hidden assumption not subject to BP updating |
 
 ### 4. Evidence gaps (tables, grouped by theme)
