@@ -58,6 +58,16 @@ their own literal `__all__` blocks when they are CLI authoring targets:
 Keep these lists literal and static; the CLI intentionally does not edit
 dynamically constructed `__all__` values.
 
+> **Migration (breaking).** Root `__all__` is now strictly validated at load /
+> compile time. A package whose root `__all__` lists a strategy
+> (`deduction(...)`, `support(...)`, composites), a `fills(...)`/bridge
+> relation, a name imported from a dependency package, an aliased `Knowledge`
+> (export name ≠ label), or a typo now fails with a `GaiaPackagingError` that
+> names the offending entry. Older loaders silently ignored such names. To
+> migrate, drop everything that is not a local headline `Knowledge` label from
+> root `__all__` and run `gaia build compile <pkg>`. See
+> [Curated Package Exports Design](../specs/2026-05-31-curated-package-exports-design.md).
+
 ## Imports
 
 ```python
